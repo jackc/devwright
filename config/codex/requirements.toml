@@ -1,0 +1,29 @@
+# Installed as root; applies to all supported Codex runtimes in this VM.
+default_permissions = "vm_dev"
+allowed_approval_policies = ["untrusted", "on-request"]
+allowed_sandbox_modes = ["read-only", "workspace-write"]
+
+[allowed_permission_profiles]
+vm_dev = true
+
+[permissions.vm_dev]
+description = "Shared development account: workspace writes and direct network access"
+extends = ":workspace"
+
+[permissions.vm_dev.network]
+enabled = true
+
+# Linux ownership protects the administrator even outside Codex.
+# These additional denials protect common sensitive paths inside Codex.
+[permissions.filesystem]
+deny_read = ["/home/jack", "/root", "~/.ssh", "~/.pgpass", "~/.aws", "~/.gnupg", "~/.kube", "~/.codex/auth.json"]
+
+[features]
+apps = false
+plugins = false
+browser_use = false
+in_app_browser = false
+computer_use = false
+
+# An explicitly empty approved list disables locally configured MCP servers.
+[mcp_servers]

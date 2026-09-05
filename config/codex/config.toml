@@ -1,0 +1,6 @@
+# Initial user defaults only. Subsequent provisioning preserves this file.
+default_permissions = "vm_dev"
+approval_policy = "on-request"
+
+[apps._default]
+enabled = false

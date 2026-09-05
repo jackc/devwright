@@ -1,0 +1,20 @@
+{
+  "minimumLimaVersion": "2.2.0",
+  "base": ["template:_images/ubuntu-24.04"],
+  "plain": true,
+  "cpus": 4,
+  "memory": "4GiB",
+  "disk": "60GiB",
+  "mounts": [],
+  "ssh": {"forwardAgent": false, "loadDotSSHPubKeys": false},
+  "containerd": {"system": false, "user": false},
+  "propagateProxyEnv": false,
+  "param": {"agentSandboxConfig": "v1"},
+  "user": {
+    "name": "jack",
+    "home": "/home/jack",
+    "uid": 1000,
+    "shell": "/bin/bash",
+    "passwordlessSudo": true
+  }
+}
