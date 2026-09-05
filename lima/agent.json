@@ -10,9 +10,9 @@
   "containerd": {"system": false, "user": false},
   "propagateProxyEnv": false,
   "user": {
-    "name": "vmadmin",
-    "comment": "VM administrator",
-    "home": "/home/vmadmin",
+    "name": "dev",
+    "comment": "Shared development account",
+    "home": "/home/dev",
     "uid": 1000,
     "shell": "/bin/bash",
     "passwordlessSudo": true

@@ -1,6 +1,41 @@
 # Lima/Codex validation
 
+## Primary dev account and root administration
+
+Tested September 5, 2026 on fresh Ubuntu 26.04 VM `agent-root-test` with Codex
+0.153.4. Lima's primary account is dev; vmadmin is no longer created. Creation
+uses dev's initial sudo solely to install root's public SSH keys and enable
+key-only root access. Root SSH is checked before provisioning denies dev sudo.
+Further configuration runs directly as root without boot provisioning.
+
+Creation and all guest acceptance checks passed. Native Lima SSH selected dev
+without a user override. Root SSH worked; sshd's effective settings disabled
+password and keyboard-interactive authentication and limited root login to
+non-password authentication. The vmadmin account was absent. Explicit configure
+passed without rebooting. A real Lima stop/start preserved the installation
+marker; dev still had no sudo, root SSH still worked, and all guest checks passed.
+The temporary VM was removed; existing VMs were not migrated.
+
+All 21 host tests (97 assertions), Bash syntax, Lima validation, and whitespace
+checks passed. Historical sections below retain the account names used then.
+
+## SSH sharing separated by user
+
+
+Tested September 5, 2026. Generated SSH entries and orchestration connections
+now use `ControlMaster auto`, `ControlPath ~/.ssh/control-%C`, and
+`ControlPersist 60`. OpenSSH's hash separates remote users, hosts, and ports.
+Existing installed entries require an explicit `install-ssh` refresh.
+
+All 20 host tests (92 assertions) passed, including distinct expanded socket
+paths for two users across two ports. A read-only live test against the older
+`agent-dev` VM used its existing `dev` and `jack` accounts and temporary sockets.
+Each user reused its own master PID on a second connection; the two users had
+different master PIDs and `id -un` always returned the requested user. Test
+connections were closed afterward. No VM or host SSH configuration was changed.
+
 ## Lima lifecycle and SSH simplification
+
 
 Tested September 5, 2026 using fresh VM `agent-ssh-test`. The Ruby `start`,
 `shell`, and `admin` commands are removed. Creation and explicit configuration

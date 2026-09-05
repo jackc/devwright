@@ -3,9 +3,10 @@
 ## Lima development VMs
 
 This branch implements a reusable **Lima + Ubuntu 26.04 + Codex** environment.
-`vmadmin` administers the VM with sudo. Humans and agents both develop as `dev`,
+`dev` is Lima's primary user. Humans and agents both develop as `dev`,
 without sudo, in `/home/dev/projects`. Projects in one VM share that account's
 files and credentials. Use another VM when they need separate access.
+Administration uses key-only SSH as `root`.
 
 Requirements on the host: Lima **2.2+**, Ruby **3.1+**, and OpenSSH.
 The Ruby orchestrator uses only standard libraries. Its tests use Minitest
@@ -21,7 +22,7 @@ ruby scripts/vm.rb create agent-dev  # installs and verifies the setup
 ruby scripts/vm.rb install-ssh agent-dev
 
 ssh lima-agent-dev           # dev: development, Codex, repositories
-ssh vmadmin@lima-agent-dev   # vmadmin: VM administration
+ssh root@lima-agent-dev   # root: VM administration
 ```
 
 Create another isolated environment with the same recipe:
@@ -31,7 +32,7 @@ ruby scripts/vm.rb create another-dev
 ruby scripts/vm.rb install-ssh another-dev
 ```
 
-`create` refuses an existing name. The launcher checks for the `vmadmin` account
+`create` refuses an existing name. The launcher checks that `dev` is the primary account
 and rejects host mounts, agent forwarding, non-plain mode, or boot provisioning.
 It never falls back to running development commands on the host. Existing
 `default-dev-vm` and `pgx-dev-vm` instances are not managed or modified.
@@ -41,15 +42,19 @@ It never falls back to running development commands on the host. Existing
 ```sh
 limactl start agent-dev
 ssh lima-agent-dev          # development as dev
-ssh vmadmin@lima-agent-dev  # administration
+ssh root@lima-agent-dev  # administration
 limactl stop agent-dev
 ```
 
 Lima manages starting, stopping, and deleting VMs. SSH provides interactive access;
 there are no corresponding Ruby wrapper commands. Our SSH entry includes Lima's
 current connection file instead of copying its port, so a normal Lima restart
-requires no SSH refresh. It disables agent forwarding, agent consultation, and
-connection sharing, keeping the two users' sessions separate.
+requires no SSH refresh. It disables agent forwarding and agent consultation.
+Connection sharing uses `~/.ssh/control-%C`: OpenSSH's hash includes the remote
+user, host, and port, so development and administration use separate connections.
+Idle shared connections close after 60 seconds. These settings precede Lima's
+included settings, overriding its single control socket per VM. Rerun
+`install-ssh` to update a previously installed entry.
 
 Restarting does not run our setup script or update Codex. Your VM's disk and
 installed settings persist. Use `ruby scripts/vm.rb verify agent-dev` to recheck
@@ -87,7 +92,7 @@ does not copy your host Git configuration.
 
 For the desktop, add **lima-agent-dev** as an SSH host in its remote connection
 settings, then select a guest directory under `/home/dev/projects`. Use the
-`dev` connection, not a connection with the username `vmadmin`. The app may
+`dev` connection, not a connection with the username `root`. The app may
 install a separate remote runtime; verify its version and effective managed
 policy in a fresh task. Installation of the CLI does not authenticate the desktop.
 
@@ -95,7 +100,8 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 
 | File | Responsibility |
 | --- | --- |
-| `lima/agent.json` | Lima template (JSON is valid YAML): image base, resources, admin account, plain mode |
+| `lima/agent.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
+| `lima/bootstrap.sh` | Creation-only setup of key-based root SSH |
 | `lima/provision.sh` | Repeatable OS, account, SSH, GitHub helper, and Codex installation |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
@@ -110,9 +116,15 @@ actual policy behavior rather than requiring that exact version:
 ruby scripts/vm.rb configure agent-dev  # applies the recipe and verifies it
 ```
 
-`create` and `configure` send the current Bash setup script and embedded policy
-files over SSH to `vmadmin`, which executes it with sudo. Lima stores no setup
-script to replay on boot. Editing this repository takes effect on an existing VM
+During creation, Lima initially grants `dev` sudo. The creation-only bootstrap
+installs Lima's public login keys for root and enables key-only root SSH. The
+launcher confirms root access, then runs provisioning as root, which revokes
+`dev`'s sudo access before installing development packages. Private keys remain
+on the host. The template's `passwordlessSudo: true` is only for this bootstrap;
+completed VMs deny sudo to `dev`.
+
+`configure` sends the current Bash setup script and embedded policy files
+directly over root SSH. Lima stores no setup script to replay on boot. Editing this repository takes effect on an existing VM
 only when you explicitly run `configure`.
 
 `configure` applies setup to a running VM without rebooting it; if stopped, it
@@ -121,9 +133,11 @@ system settings, and runs the guest acceptance checks. It preserves `dev`'s
 personal Codex config, credentials, and projects. Use it while development tools
 are idle because it updates installed software and reloads SSH configuration.
 
-Explicit provisioning restores policy, SSH settings, public login keys from
-`vmadmin`, and `dev`'s empty supplementary group list. Manual changes to those
-settings survive normal restarts but are overwritten by `configure`.
+Explicit provisioning restores policy, SSH settings, and `dev`'s empty
+supplementary group list. Manual changes to those settings survive normal
+restarts but are overwritten by `configure`. Root's authorized keys are
+initialized once during creation and are not recopied from development files
+during configuration.
 If setup fails, fix the cause and rerun `configure`; restarting does not retry it.
 Full acceptance checks run during `create`, `configure`, and `verify`. Lima
 startup does not run our verification.
@@ -135,11 +149,11 @@ substitute for a guest patching policy.
 
 `install-ssh` adds an Include to `~/.ssh/config`, backs up that file before
 changing it, and stores a small SSH entry under `~/.ssh/agent-vms/`. The entry includes
-Lima's own SSH configuration and defaults to `dev`; `vmadmin@` overrides the user. It refuses
+Lima's own SSH configuration and defaults to `dev`; `root@` overrides the user. It refuses
 to overwrite an unrelated generated-file target or rewrite a symlinked SSH
 config. `ssh-config` prints the entry instead if you manage SSH configuration
 through your own dotfiles tooling.
-Create fresh VMs for the Ubuntu 26.04 and `vmadmin` recipe. Migrating VMs made
+Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user. Migrating VMs made
 with earlier recipes, including boot provisioning, is not supported.
 
 ### Isolation and validation limits
@@ -147,16 +161,16 @@ with earlier recipes, including boot provisioning, is not supported.
 * Plain mode disables host filesystem mounts, SSH-agent forwarding, automatic
   port forwarding, and bundled containerd. Use explicit SSH tunnels for previews,
   for example `ssh -N -L 3000:127.0.0.1:3000 lima-agent-dev`.
-* Linux protects `vmadmin` and `/root` from `dev`; managed Codex policy additionally
+* Linux protects `/root` from `dev`; managed Codex policy additionally
   denies common sensitive paths, permits workspace writes and direct networking,
   and disables apps, plugins, browser/computer use and configured MCP servers.
 * Ubuntu 26.04 supplies the bubblewrap AppArmor profile. No custom profile is
   installed; Ubuntu's global user-namespace restriction stays enabled, and Codex
   applies its own filesystem sandbox. Older Ubuntu releases are not supported.
-* The helper and policy files are root-owned. `vmadmin` has passwordless guest sudo;
+* The helper and policy files are root-owned. root SSH permits public-key authentication only;
   do not expose an admin SSH connection or rootful Docker socket to agents.
 * Anyone running as `dev` can modify that account's startup files, tools, and
-  project code. Do not run such files as `vmadmin` with sudo. Guest policy controls
+  project code. Do not run such files as `root`. Guest policy controls
   supported Codex clients, not arbitrary replacement binaries.
 * Read denial is tested with a synthetic file, including a conflicting config
   override. The test refuses to touch an existing `.pgpass`. No real secret or

@@ -76,13 +76,14 @@ class DevelopmentVM
       raise 'Unexpected mounts, forwarding, or non-plain mode; inspect Lima overrides'
     end
     raise 'Boot provisioning is unsupported; create a fresh VM with this recipe' unless Array(cfg['provision']).empty?
-    raise 'Unexpected administrator account' unless cfg.dig('user', 'name') == 'vmadmin'
+    raise 'Unexpected primary account' unless cfg.dig('user', 'name') == 'dev'
   end
 
   def ssh_args(state, user = 'dev')
     ['ssh', '-F', File.join(state.fetch('dir'), 'ssh.config'),
      '-o', 'IdentityAgent=none', '-o', 'ForwardAgent=no',
-     '-o', 'ControlPath=none', '-o', 'ControlMaster=no',
+     '-o', 'ControlPath=~/.ssh/control-%C', '-o', 'ControlMaster=auto',
+     '-o', 'ControlPersist=60',
      '-l', user, "lima-#{state.fetch('name')}"]
   end
 
@@ -95,11 +96,11 @@ class DevelopmentVM
     path = File.join(state.fetch('dir'), 'ssh.config').gsub(/[\\"]/) { |char| "\\#{char}" }
     <<~CONFIG
       Host lima-#{state.fetch('name')}
-        User dev
         IdentityAgent none
         ForwardAgent no
-        ControlMaster no
-        ControlPath none
+        ControlMaster auto
+        ControlPath ~/.ssh/control-%C
+        ControlPersist 60
         Include "#{path}"
 
       Host *
@@ -126,11 +127,18 @@ class DevelopmentVM
       File.write(config, "#{INCLUDE}\n\n#{existing}")
       File.chmod(0o600, config)
     end
-    puts "SSH ready: ssh lima-#{state['name']} (dev); ssh vmadmin@lima-#{state['name']} (admin)"
+    puts "SSH ready: ssh lima-#{state['name']} (dev); ssh root@lima-#{state['name']} (admin)"
+  end
+
+  def bootstrap(state)
+    remote(state, ['sudo', '-n', '/bin/bash', '-s'], 'dev',
+           input: File.read(File.join(@root, 'lima/bootstrap.sh')))
+    # Confirm the new administrative route before provisioning removes dev's sudo.
+    remote(state, ['test', '-s', '/root/.ssh/authorized_keys'], 'root')
   end
 
   def configure(state)
-    remote(state, ['sudo', '-n', '/bin/bash', '-s'], 'vmadmin', input: provision)
+    remote(state, ['/bin/bash', '-s'], 'root', input: provision)
     remote(state, ['ruby', '/usr/local/share/agent-vm/verify.rb'])
   end
 
@@ -162,6 +170,7 @@ class DevelopmentVM
     check_instance(state)
     if action == 'create'
       run(['limactl', 'start', '--tty=false', name])
+      bootstrap(info(name))
       configure(info(name))
       puts "Created and verified. Set up SSH: ruby scripts/vm.rb install-ssh #{name}"
       return

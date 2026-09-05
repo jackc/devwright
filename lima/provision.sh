@@ -7,19 +7,11 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 unset SSH_AUTH_SOCK GH_TOKEN GITHUB_TOKEN OPENAI_API_KEY
 
 test "$(id -u)" = 0
-test "$(getent passwd vmadmin | cut -d: -f6)" = /home/vmadmin
-chmod 700 /home/vmadmin
+test -s /root/.ssh/authorized_keys
+chmod 700 /root
 install -d -m 755 /usr/local/share/agent-vm /etc/codex
 rm -f /usr/local/share/agent-vm/managed
 
-apt-get update -qq
-apt-get install -y --no-install-recommends \
-  ca-certificates curl git gh jq ripgrep build-essential ruby \
-  nodejs npm zsh unzip bubblewrap apparmor
-
-if ! id dev >/dev/null 2>&1; then
-  useradd --create-home --user-group --shell /bin/bash dev
-fi
 test "$(getent passwd dev | cut -d: -f6)" = /home/dev
 test "$(id -u dev)" != 0
 # This recipe owns the dev account's supplementary group membership.
@@ -28,21 +20,26 @@ passwd -l dev >/dev/null
 chmod 700 /home/dev
 install -d -o dev -g dev -m 700 /home/dev/.ssh /home/dev/.codex /home/dev/.config /home/dev/.config/agent-vm
 install -d -o dev -g dev -m 755 /home/dev/projects
-# Public login key only. The private Lima key stays on the host.
-install -o dev -g dev -m 600 /home/vmadmin/.ssh/authorized_keys /home/dev/.ssh/authorized_keys
 printf '%s\n' 'dev ALL=(ALL:ALL) !ALL' > /etc/sudoers.d/99-agent-vm-dev
 chmod 440 /etc/sudoers.d/99-agent-vm-dev
 visudo -cf /etc/sudoers >/dev/null
 
 cat > /etc/ssh/sshd_config.d/00-agent-vm.conf <<'SSH'
-PermitRootLogin no
+PermitRootLogin prohibit-password
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 AllowAgentForwarding no
 X11Forwarding no
 SSH
+# Replace the creation-only SSH drop-in with the complete managed settings.
+rm -f /etc/ssh/sshd_config.d/00-agent-vm-root.conf
 /usr/sbin/sshd -t
 systemctl reload ssh
+
+apt-get update -qq
+apt-get install -y --no-install-recommends \
+  ca-certificates curl git gh jq ripgrep build-essential ruby \
+  nodejs npm zsh unzip bubblewrap apparmor
 
 printf '%s' '__REQUIREMENTS_B64__' | base64 -d > /etc/codex/requirements.toml
 chmod 644 /etc/codex/requirements.toml
@@ -81,4 +78,4 @@ chmod 755 /usr/local/share/agent-vm/check_codex.rb
 rm -f /usr/local/share/agent-vm/verify.py /usr/local/share/agent-vm/check_codex.py
 printf '%s\n' 'agent-sandbox-config-v1' > /usr/local/share/agent-vm/managed
 printf '%s\n' "$codex_version" > /usr/local/share/agent-vm/codex-version
-echo 'Provisioned: vmadmin administers; dev develops. No credentials were copied.'
+echo 'Provisioned: root administers; dev develops. No credentials were copied.'

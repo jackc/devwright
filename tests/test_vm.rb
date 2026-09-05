@@ -14,7 +14,7 @@ class DevelopmentVMTest < Minitest::Test
   def test_render_resolves_payloads
     text = @vm.provision
     refute_match(/_B64__|__CODEX_VERSION__/, text)
-    assert_equal 'vmadmin', @vm.render.dig('user', 'name')
+    assert_equal 'dev', @vm.render.dig('user', 'name')
     assert_equal true, @vm.render['plain']
     assert_empty @vm.render['provision']
   end
@@ -22,7 +22,7 @@ class DevelopmentVMTest < Minitest::Test
   def test_refuses_foreign_or_unsafe_instances
     @vm.check_instance(@state)
     { 'plain' => false, 'mounts' => [{ 'location' => '~' }],
-      'ssh' => { 'forwardAgent' => true }, 'provision' => [{ 'mode' => 'system', 'script' => 'true' }], 'user' => { 'name' => 'dev' } }.each do |key, value|
+      'ssh' => { 'forwardAgent' => true }, 'provision' => [{ 'mode' => 'system', 'script' => 'true' }], 'user' => { 'name' => 'root' } }.each do |key, value|
       assert_raises(RuntimeError) { @vm.check_instance(@state.merge('config' => @vm.render.merge(key => value))) }
     end
   end
@@ -55,7 +55,7 @@ class DevelopmentVMTest < Minitest::Test
 
   def test_ssh_separates_identities_and_quotes_remote_arguments
     args = @vm.ssh_args(@state)
-    assert_includes args, 'ControlPath=none'
+    assert_includes args, 'ControlPath=~/.ssh/control-%C'
     assert_includes args, 'IdentityAgent=none'
     assert_equal ['-l', 'dev', 'lima-test'], args.last(3)
     command = ['echo', "a'; $(false)", 'a path']
@@ -114,6 +114,16 @@ class DevelopmentVMTest < Minitest::Test
     end
   end
 
+  def test_bootstrap_establishes_root_access_before_configuration
+    calls = []
+    @vm.stub(:remote, ->(*args, **options) { calls << [args, options] }) { @vm.bootstrap(@state) }
+    assert_equal %w[sudo -n /bin/bash -s], calls[0][0][1]
+    assert_equal 'dev', calls[0][0][2]
+    assert_equal File.read(File.join(DevelopmentVM::ROOT, 'lima/bootstrap.sh')), calls[0][1][:input]
+    assert_equal %w[test -s /root/.ssh/authorized_keys], calls[1][0][1]
+    assert_equal 'root', calls[1][0][2]
+  end
+
   def test_configure_uses_admin_stdin_then_verifies_without_restarting
     calls = []
     @vm.stub(:info, @state) do
@@ -123,8 +133,8 @@ class DevelopmentVMTest < Minitest::Test
     end
     assert_equal 2, calls.length
     args, options = calls.first
-    assert_equal ['-l', 'vmadmin', 'lima-test'], args[-4, 3]
-    assert_equal %w[sudo -n /bin/bash -s], Shellwords.split(args.last)
+    assert_equal ['-l', 'root', 'lima-test'], args[-4, 3]
+    assert_equal %w[/bin/bash -s], Shellwords.split(args.last)
     assert_equal @vm.provision, options.fetch(:input)
     assert_equal %w[ruby /usr/local/share/agent-vm/verify.rb], Shellwords.split(calls[1][0].last)
   end
@@ -137,7 +147,7 @@ class DevelopmentVMTest < Minitest::Test
       end
     end
     assert_equal ['limactl', 'start', '--tty=false', 'test'], calls.first
-    assert_equal %w[sudo -n /bin/bash -s], Shellwords.split(calls[1].last)
+    assert_equal %w[/bin/bash -s], Shellwords.split(calls[1].last)
   end
 
   def test_removed_commands_never_run
@@ -163,26 +173,29 @@ class DevelopmentVMTest < Minitest::Test
       state = @state.merge('dir' => dir)
       wrapper = File.join(dir, 'wrapper.config')
       File.write(wrapper, @vm.ssh_config(state))
+      sockets = []
       [1234, 5678].each do |port|
         File.write(File.join(dir, 'ssh.config'), <<~CONFIG)
           Host lima-test
             HostName 127.0.0.1
             Port #{port}
-            User vmadmin
+            User dev
             ControlMaster auto
             ControlPath /tmp/admin-socket
         CONFIG
-        ['lima-test', 'vmadmin@lima-test'].each do |destination|
+        ['lima-test', 'root@lima-test'].each do |destination|
           output = @vm.run(['ssh', '-G', '-T', '-F', wrapper, destination], capture: true)
           options = output.lines.to_h { |line| line.strip.split(' ', 2) }
           assert_equal port.to_s, options['port']
-          assert_equal(destination.include?('@') ? 'vmadmin' : 'dev', options['user'])
-          assert_equal 'false', options['controlmaster']
-          refute options.key?('controlpath')
+          assert_equal(destination.include?('@') ? 'root' : 'dev', options['user'])
+          assert_equal 'auto', options['controlmaster']
+          assert_equal '60', options['controlpersist']
+          sockets << options.fetch('controlpath')
           assert_equal 'none', options['identityagent']
           assert_equal 'no', options['forwardagent']
         end
       end
+      assert_equal 4, sockets.uniq.length, 'Different users and ports must have distinct sockets'
     end
   end
 end
