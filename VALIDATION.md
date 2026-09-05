@@ -1,5 +1,30 @@
 # Lima/Codex validation
 
+## Ruby orchestration port
+
+Retested September 5, 2026 using Ruby 4.0.2 and Lima 2.2.0:
+
+- Replaced `scripts/vm.py` with `scripts/vm.rb` and the host unit tests with
+  Minitest. Bash provisioning and Python guest probes are unchanged except for
+  the provisioning script's renderer-name comment.
+- Parsed Ruby and Python rendered templates compared equal before that comment
+  update. The generated template passed `limactl validate`.
+- 11 host tests / 42 assertions passed, including actual subprocess argument
+  preservation, child environment filtering, token transport using synthetic
+  input, SSH-file migration and preservation, and configure command ordering.
+- Ran Ruby `configure agent-dev`: stopped the VM, updated its stored recipe,
+  booted it, checked provisioning completion, and refreshed its SSH aliases.
+- Ran Ruby `verify agent-dev`: all Linux, app-server, filesystem sandbox, and
+  conflicting-profile checks passed after reboot.
+- Ran Ruby `start` on the running VM and `install-ssh` again; both succeeded.
+  The resulting SSH aliases logged in as `dev` and `jack`; jack's sudo worked.
+- Ruby syntax, Bash syntax, and diff whitespace checks passed.
+
+The existing VM was reused; this port did not create another VM. Token prompting
+was covered with synthetic unit-test input, without changing stored credentials.
+The authentication, GitHub scope, and desktop-inventory checks listed below
+remain user-dependent and were not performed by this port.
+
 ## Environment
 
 Implemented and exercised on September 5, 2026:
@@ -13,7 +38,7 @@ Implemented and exercised on September 5, 2026:
 
 ## Checks and findings
 
-The maintained acceptance command is `python3 scripts/vm.py verify agent-dev`.
+The maintained acceptance command is `ruby scripts/vm.rb verify agent-dev`.
 It uses SSH as `dev`, no model invocation, no real credentials, and a synthetic
 `.pgpass` that is removed afterward. It refuses to overwrite a preexisting file.
 

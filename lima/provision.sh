@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rendered by scripts/vm.py; also used for explicit updates over admin SSH.
+# Rendered by scripts/vm.rb; also used for explicit updates over admin SSH.
 # Lima recipe marker: {{.Param.agentSandboxConfig}}
 set -euo pipefail
 umask 022
