@@ -19,9 +19,9 @@ class DevelopmentVM
   PAYLOADS = {
     'REQUIREMENTS' => 'config/codex/requirements.toml',
     'CONFIG' => 'config/codex/config.toml',
-    'VERIFY' => 'scripts/verify_guest.py',
+    'VERIFY' => 'scripts/verify_guest.rb',
     'APPARMOR' => 'config/apparmor/agent-vm-bwrap',
-    'CHECK_CODEX' => 'scripts/check_codex.py'
+    'CHECK_CODEX' => 'scripts/check_codex.rb'
   }.freeze
 
   def initialize(root: ROOT, home: Dir.home)
@@ -188,7 +188,7 @@ class DevelopmentVM
       run(['limactl', 'start', '--tty=false', name])
       ready(name)
     when 'verify'
-      remote(state, ['python3', '/usr/local/share/agent-vm/verify.py'])
+      remote(state, ['ruby', '/usr/local/share/agent-vm/verify.rb'])
     when 'shell', 'admin'
       run(ssh_args(state, action == 'admin' ? 'jack' : 'dev').insert(1, '-t'))
     when 'ssh-config'

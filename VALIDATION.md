@@ -1,11 +1,34 @@
 # Lima/Codex validation
 
+## Ruby guest verification port
+
+The remaining guest probes are now `scripts/verify_guest.rb` and
+`scripts/check_codex.rb`. The sandbox canary itself also runs Ruby. Provisioning
+installs Ruby and removes the two obsolete deployed Python probes. It no longer
+explicitly installs Python development packages; existing system Python packages
+are left alone because Ubuntu and other development tools may depend on them.
+
+The verifier checks the installed requirements file against its provisioned
+SHA-256 digest, then checks managed profile and feature behavior through Codex.
+This preserves the policy checks without adding a Ruby TOML-parser dependency.
+Subprocess execution has bounded waits and process-group cleanup; the protocol
+reader handles buffered responses, notifications, EOF, and timeouts.
+
+Host tests: 16 tests / 58 assertions passed, covering orchestration plus protocol
+handling, command output/exit status/timeouts, and preservation of an existing
+canary file. Ruby syntax, Bash syntax, and generated Lima validation passed.
+
+Retested in `agent-dev` using guest Ruby 3.2.3 after reconfiguration and reboot:
+all account, filesystem, app-server, managed-feature, and conflicting-override
+checks passed. Both obsolete deployed `.py` files were confirmed absent. The
+user-dependent authenticated checks remain outstanding as documented below.
+
 ## Ruby orchestration port
 
 Retested September 5, 2026 using Ruby 4.0.2 and Lima 2.2.0:
 
 - Replaced `scripts/vm.py` with `scripts/vm.rb` and the host unit tests with
-  Minitest. Bash provisioning and Python guest probes are unchanged except for
+  Minitest. At that stage, Bash provisioning and Python guest probes were unchanged except for
   the provisioning script's renderer-name comment.
 - Parsed Ruby and Python rendered templates compared equal before that comment
   update. The generated template passed `limactl validate`.

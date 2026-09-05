@@ -9,8 +9,8 @@ files and credentials. Use another VM when they need separate access.
 
 Requirements on the host: Lima **2.2+**, Ruby **3.1+**, and OpenSSH.
 The Ruby orchestrator uses only standard libraries. Its tests use Minitest
-(`gem install minitest` if it is not already installed). Python is still installed
-inside the guest for the Codex verification probes; it is not required on the host.
+(`gem install minitest` if it is not already installed). Provisioning installs Ruby
+inside the guest for verification. All maintained scripts are Ruby or Bash.
 The first boot downloads an Ubuntu image and installs packages. The current
 recipe pins Codex **0.149.0**; the OS image selection comes from the installed
 Lima Ubuntu 24.04 image template. OS package versions are not pinned.
@@ -99,7 +99,7 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
 | `config/apparmor/agent-vm-bwrap` | Approved Ubuntu sandbox compatibility exception |
-| `scripts/verify_guest.py` | Credential-free Linux and sandbox acceptance checks |
+| `scripts/verify_guest.rb` | Credential-free Linux and sandbox acceptance checks |
 
 Edit the shared source, then apply it to an existing VM:
 
@@ -157,7 +157,7 @@ updated in place, so existing VMs do not need to be recreated for the Ruby port.
   allowed and one **disallowed private repository**; public repositories are not
   a valid negative test. No network allowlist or Claude setup is included.
 
-Local checks: `ruby tests/test_vm.rb` and
+Local checks: `ruby tests/test_vm.rb`, `ruby tests/test_verification.rb`, and
 `bash -n lima/provision.sh`. `create` also validates the generated Lima YAML.
 See [VALIDATION.md](VALIDATION.md) for the actual VM test results and research provenance.
 
