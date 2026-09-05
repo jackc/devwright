@@ -11,9 +11,9 @@ Requirements on the host: Lima **2.2+**, Ruby **3.1+**, and OpenSSH.
 The Ruby orchestrator uses only standard libraries. Its tests use Minitest
 (`gem install minitest` if it is not already installed). Provisioning installs Ruby
 inside the guest for verification. All maintained scripts are Ruby or Bash.
-The first boot downloads an Ubuntu image and installs packages. The current
-recipe pins Codex **0.149.0**; the OS image selection comes from the installed
-Lima Ubuntu 26.04 image template. OS package versions are not pinned.
+The first boot downloads an Ubuntu image and installs packages. Provisioning
+installs the latest stable Codex release from npm. The OS image selection comes
+from the installed Lima Ubuntu 26.04 image template. OS package versions are not pinned.
 
 ```sh
 # Run from this repository on the host.
@@ -95,12 +95,14 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | --- | --- |
 | `lima/agent.json` | Lima template (JSON is valid YAML): image base, resources, admin account, plain mode |
 | `lima/provision.sh` | Repeatable OS, account, SSH, GitHub helper, and Codex installation |
-| `lima/codex-version` | Exact npm Codex version |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
 | `scripts/verify_guest.rb` | Credential-free Linux and sandbox acceptance checks |
 
-Edit the shared source, then apply it to an existing VM:
+Edit the shared source, then apply it to an existing VM. This also updates Codex
+to the latest stable release. The version installed during provisioning is recorded
+in `/usr/local/share/agent-vm/codex-version` for diagnostics; verification checks
+actual policy behavior rather than requiring that exact version:
 
 ```sh
 ruby scripts/vm.rb configure agent-dev

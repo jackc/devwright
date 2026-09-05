@@ -53,10 +53,7 @@ class DevelopmentVM
     PAYLOADS.each do |key, path|
       script = script.gsub("__#{key}_B64__", Base64.strict_encode64(File.binread(File.join(@root, path))))
     end
-    version = File.read(File.join(@root, 'lima/codex-version')).strip
-    raise 'codex-version must be an exact release version' unless /\A\d+\.\d+\.\d+\z/.match?(version)
-
-    script.gsub('__CODEX_VERSION__', version)
+    script
   end
 
   def render

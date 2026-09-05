@@ -1,5 +1,13 @@
 # Lima/Codex validation
 
+## Latest Codex installation
+
+Tested September 5, 2026 on fresh Ubuntu 26.04 VM `agent-latest-test`.
+The npm `latest` tag installed Codex 0.153.4 and all guest acceptance checks
+passed. All 16 host tests (58 assertions), Bash syntax, Lima template validation,
+and whitespace checks passed. The recipe no longer pins a Codex version; the
+installed version is recorded for diagnostics and policy behavior is tested.
+
 ## Portable administrator account
 
 Tested September 5, 2026 with a fresh `agent-vmadmin-test` VM using Ubuntu

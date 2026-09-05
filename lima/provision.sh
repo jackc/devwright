@@ -54,11 +54,9 @@ if [ ! -e /home/dev/.codex/config.toml ]; then
   chmod 600 /home/dev/.codex/config.toml
 fi
 
-codex_version='__CODEX_VERSION__'
-if [ "$(/usr/local/bin/codex --version 2>/dev/null || true)" != "codex-cli $codex_version" ]; then
-  npm install --global --prefix /usr/local --ignore-scripts "@openai/codex@$codex_version"
-fi
-/usr/local/bin/codex --version
+npm install --global --prefix /usr/local --ignore-scripts @openai/codex@latest
+codex_version=$(/usr/local/bin/codex --version)
+printf '%s\n' "$codex_version"
 
 # gh gets this VM's token for login and non-login shells, including Git helpers.
 # No token is embedded in this script, Lima config, or logs.
