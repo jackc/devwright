@@ -9,7 +9,6 @@
   "ssh": {"forwardAgent": false, "loadDotSSHPubKeys": false},
   "containerd": {"system": false, "user": false},
   "propagateProxyEnv": false,
-  "param": {"agentSandboxConfig": "v1"},
   "user": {
     "name": "vmadmin",
     "comment": "VM administrator",

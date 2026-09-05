@@ -1,6 +1,29 @@
 # Lima/Codex validation
 
+## Explicit provisioning lifecycle
+
+Tested September 5, 2026 with fresh Ubuntu 26.04 VM `agent-explicit-test`.
+Lima's stored configuration had no provisioning scripts. `create` applied setup
+via vmadmin SSH and ran all guest acceptance checks successfully with Codex
+0.153.4. The launcher no longer uses a Lima provisioning parameter as a marker;
+it validates the account, plain mode, sharing settings, and absence of boot hooks.
+
+A real Lima stop/start changed the kernel boot ID while preserving a synthetic
+comment added to the managed policy. File sizes and modification timestamps for
+the policy, completion marker, recorded Codex version, GitHub wrapper, and apt
+history stayed unchanged. Explicit `configure` then restored the policy and
+passed all guest checks without changing the boot ID. Both temporary VMs used
+for these two changes were removed after testing.
+
+All 19 host tests (68 assertions), Bash syntax, Lima template validation, and
+whitespace checks passed. Tests cover configuration over admin SSH stdin,
+automatic verification, starting a stopped VM for configuration, starting without
+provisioning, and failure propagation. Earlier sections describe historical
+recipes; current creation/configuration always runs verification, and ordinary
+startup only checks the installation completion marker.
+
 ## Latest Codex installation
+
 
 Tested September 5, 2026 on fresh Ubuntu 26.04 VM `agent-latest-test`.
 The npm `latest` tag installed Codex 0.153.4 and all guest acceptance checks

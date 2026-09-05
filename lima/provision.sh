@@ -1,6 +1,5 @@
 #!/bin/bash
-# Rendered by scripts/vm.rb; also used for explicit updates over admin SSH.
-# Lima recipe marker: {{.Param.agentSandboxConfig}}
+# Sent by scripts/vm.rb over admin SSH during create/configure only.
 set -euo pipefail
 umask 022
 export DEBIAN_FRONTEND=noninteractive

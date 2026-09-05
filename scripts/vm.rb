@@ -58,7 +58,8 @@ class DevelopmentVM
 
   def render
     config = JSON.parse(File.read(File.join(@root, 'lima/agent.json')))
-    config['provision'] = [{ 'mode' => 'system', 'script' => provision }]
+    # Setup is sent explicitly over admin SSH, never registered as a boot hook.
+    config['provision'] = []
     config
   end
 
@@ -72,12 +73,10 @@ class DevelopmentVM
 
   def check_instance(state)
     cfg = state.fetch('config')
-    unless cfg.dig('param', 'agentSandboxConfig') == 'v1'
-      raise 'Refusing to manage a VM not created by this recipe'
-    end
     unless cfg['plain'] && Array(cfg['mounts']).empty? && !cfg.dig('ssh', 'forwardAgent')
       raise 'Unexpected mounts, forwarding, or non-plain mode; inspect Lima overrides'
     end
+    raise 'Boot provisioning is unsupported; create a fresh VM with this recipe' unless Array(cfg['provision']).empty?
     raise 'Unexpected administrator account' unless cfg.dig('user', 'name') == 'vmadmin'
   end
 
@@ -139,6 +138,11 @@ class DevelopmentVM
     install_ssh(state)
   end
 
+  def configure(state)
+    remote(state, ['sudo', '-n', '/bin/bash', '-s'], 'vmadmin', input: provision)
+    remote(state, ['ruby', '/usr/local/share/agent-vm/verify.rb'])
+  end
+
   def read_token
     console = IO.console
     raise 'A terminal is required to enter a token securely' unless console
@@ -167,6 +171,7 @@ class DevelopmentVM
     check_instance(state)
     if %w[create start].include?(action)
       run(['limactl', 'start', '--tty=false', name])
+      configure(info(name)) if action == 'create'
       ready(name)
       puts "Ready. Develop: scripts/vm.rb shell #{name}; administer: scripts/vm.rb admin #{name}"
       return
@@ -175,13 +180,8 @@ class DevelopmentVM
 
     case action
     when 'configure'
-      puts 'Updating provisioning requires a VM restart; active sessions will disconnect.'
-      $stdout.flush
-      run(['limactl', 'stop', name]) if state['status'] == 'Running'
-      # Persist the recipe so a reboot cannot restore the old provisioning.
-      expression = '.provision = ' + JSON.generate(render.fetch('provision'))
-      run(['limactl', 'edit', '--tty=false', '--set', expression, name])
-      run(['limactl', 'start', '--tty=false', name])
+      run(['limactl', 'start', '--tty=false', name]) unless state['status'] == 'Running'
+      configure(info(name))
       ready(name)
     when 'verify'
       remote(state, ['ruby', '/usr/local/share/agent-vm/verify.rb'])

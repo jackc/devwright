@@ -11,14 +11,13 @@ Requirements on the host: Lima **2.2+**, Ruby **3.1+**, and OpenSSH.
 The Ruby orchestrator uses only standard libraries. Its tests use Minitest
 (`gem install minitest` if it is not already installed). Provisioning installs Ruby
 inside the guest for verification. All maintained scripts are Ruby or Bash.
-The first boot downloads an Ubuntu image and installs packages. Provisioning
+Creation downloads an Ubuntu image and installs packages. Provisioning
 installs the latest stable Codex release from npm. The OS image selection comes
 from the installed Lima Ubuntu 26.04 image template. OS package versions are not pinned.
 
 ```sh
 # Run from this repository on the host.
-ruby scripts/vm.rb create agent-dev
-ruby scripts/vm.rb verify agent-dev
+ruby scripts/vm.rb create agent-dev  # installs and verifies the setup
 ruby scripts/vm.rb install-ssh agent-dev
 
 ssh agent-dev         # dev: development, Codex, repositories
@@ -29,12 +28,11 @@ Create another isolated environment with the same recipe:
 
 ```sh
 ruby scripts/vm.rb create another-dev
-ruby scripts/vm.rb verify another-dev
 ruby scripts/vm.rb install-ssh another-dev
 ```
 
-`create` refuses an existing name. The launcher refuses instances without this
-recipe's marker and rejects host mounts, agent forwarding, or non-plain mode.
+`create` refuses an existing name. The launcher checks for the `vmadmin` account
+and rejects host mounts, agent forwarding, non-plain mode, or boot provisioning.
 It never falls back to running development commands on the host. Existing
 `default-dev-vm` and `pgx-dev-vm` instances are not managed or modified.
 
@@ -52,6 +50,10 @@ An ordinary `limactl start` does not refresh those aliases; run `install-ssh`
 afterward if needed. The generated aliases disable SSH-agent consultation,
 forwarding, and connection sharing so a `dev` login cannot reuse a `vmadmin` connection.
 The host's other SSH connections keep their existing configuration.
+
+`start` does not run our setup script, install packages, update Codex, or restore
+configuration. Your VM's disk and installed settings persist across restarts.
+Use `verify` whenever you want to recheck the restrictions without updating tools.
 
 ### GitHub and Codex sign-in
 
@@ -105,22 +107,31 @@ in `/usr/local/share/agent-vm/codex-version` for diagnostics; verification check
 actual policy behavior rather than requiring that exact version:
 
 ```sh
-ruby scripts/vm.rb configure agent-dev
-ruby scripts/vm.rb verify agent-dev
+ruby scripts/vm.rb configure agent-dev  # applies the recipe and verifies it
 ```
 
-**`configure` stops and restarts the VM, disconnecting active sessions.** It
-updates the stored provisioning script before reboot, so subsequent boots use
-the new setup. It updates managed policy and installed tools but preserves
-`dev`'s Codex config and credentials. Resource/image changes in `agent.json`
-apply to newly created VMs; `configure` updates provisioning only. Change existing
-VM resources with Lima's own stopped-instance editing workflow.
+`create` and `configure` send the current Bash setup script and embedded policy
+files over SSH to `vmadmin`, which executes it with sudo. Lima stores no setup
+script to replay on boot. Editing this repository takes effect on an existing VM
+only when you explicitly run `configure`.
 
-Provisioning runs on each boot. It restores policy, SSH settings, the approved
-public login keys from `vmadmin`, and `dev`'s empty supplementary group list. Add
-system setup to the recipe rather than making changes you expect these steps
-to preserve. Run Ubuntu security upgrades administratively as needed; package
-installation is not a substitute for a guest patching policy.
+`configure` applies setup to a running VM without rebooting it; if stopped, it
+starts the VM first. It installs the latest Codex, updates managed policy and
+system settings, and runs the guest acceptance checks. It preserves `dev`'s
+personal Codex config, credentials, and projects. Use it while development tools
+are idle because it updates installed software and reloads SSH configuration.
+
+Explicit provisioning restores policy, SSH settings, public login keys from
+`vmadmin`, and `dev`'s empty supplementary group list. Manual changes to those
+settings survive normal restarts but are overwritten by `configure`.
+If setup fails, fix the cause and rerun `configure`; restarting does not retry it.
+The startup completion marker checks that installation finished; full acceptance
+checks run during `create`, `configure`, and `verify`, not `start`.
+
+Resource/image changes in `agent.json` apply to newly created VMs. Change existing
+VM resources with Lima's own stopped-instance editing workflow. Run Ubuntu
+security upgrades administratively as needed; package installation is not a
+substitute for a guest patching policy.
 
 `install-ssh` adds an Include to `~/.ssh/config`, backs up that file before
 changing it, and stores generated aliases under `~/.ssh/agent-vms/`. It refuses
@@ -128,7 +139,7 @@ to overwrite an unrelated generated-file target or rewrite a symlinked SSH
 config. `ssh-config` prints the aliases instead if you manage SSH configuration
 through your own dotfiles tooling.
 Create fresh VMs for the Ubuntu 26.04 and `vmadmin` recipe. Migrating VMs made
-with earlier recipes is not supported.
+with earlier recipes, including boot provisioning, is not supported.
 
 ### Isolation and validation limits
 

@@ -12,16 +12,17 @@ class DevelopmentVMTest < Minitest::Test
   end
 
   def test_render_resolves_payloads
-    text = JSON.generate(@vm.render)
+    text = @vm.provision
     refute_match(/_B64__|__CODEX_VERSION__/, text)
     assert_equal 'vmadmin', @vm.render.dig('user', 'name')
     assert_equal true, @vm.render['plain']
+    assert_empty @vm.render['provision']
   end
 
   def test_refuses_foreign_or_unsafe_instances
     @vm.check_instance(@state)
     { 'plain' => false, 'mounts' => [{ 'location' => '~' }],
-      'ssh' => { 'forwardAgent' => true }, 'param' => {}, 'user' => { 'name' => 'dev' } }.each do |key, value|
+      'ssh' => { 'forwardAgent' => true }, 'provision' => [{ 'mode' => 'system', 'script' => 'true' }], 'user' => { 'name' => 'dev' } }.each do |key, value|
       assert_raises(RuntimeError) { @vm.check_instance(@state.merge('config' => @vm.render.merge(key => value))) }
     end
   end
@@ -115,15 +116,53 @@ class DevelopmentVMTest < Minitest::Test
     end
   end
 
-  def test_configure_stops_edits_then_starts_before_readiness_check
+  def test_configure_uses_admin_stdin_then_verifies_without_restarting
     calls = []
     @vm.stub(:info, @state) do
-      @vm.stub(:run, ->(argv) { calls << argv }) do
+      @vm.stub(:run, ->(argv, **options) { calls << [argv, options] }) do
         @vm.stub(:install_ssh, nil) { capture_io { @vm.execute('configure', 'test') } }
       end
     end
-    assert_equal %w[stop edit start], calls.first(3).map { |argv| argv[1] }
-    assert_equal '.provision = ' + JSON.generate(@vm.render['provision']), calls[1][4]
-    assert_equal %w[test -f /usr/local/share/agent-vm/managed], Shellwords.split(calls.last.last)
+    assert_equal 3, calls.length
+    args, options = calls.first
+    assert_equal ['-l', 'vmadmin', 'lima-test'], args[-4, 3]
+    assert_equal %w[sudo -n /bin/bash -s], Shellwords.split(args.last)
+    assert_equal @vm.provision, options.fetch(:input)
+    assert_equal %w[ruby /usr/local/share/agent-vm/verify.rb], Shellwords.split(calls[1][0].last)
+    assert_equal %w[test -f /usr/local/share/agent-vm/managed], Shellwords.split(calls.last[0].last)
+  end
+
+  def test_configure_starts_a_stopped_vm_before_setup
+    calls = []
+    @vm.stub(:info, @state.merge('status' => 'Stopped')) do
+      @vm.stub(:run, ->(argv, **options) { calls << argv }) do
+        @vm.stub(:install_ssh, nil) { capture_io { @vm.execute('configure', 'test') } }
+      end
+    end
+    assert_equal ['limactl', 'start', '--tty=false', 'test'], calls.first
+    assert_equal %w[sudo -n /bin/bash -s], Shellwords.split(calls[1].last)
+  end
+
+  def test_start_does_not_provision
+    calls = []
+    @vm.stub(:info, @state) do
+      @vm.stub(:configure, ->(*) { flunk 'Start ran provisioning' }) do
+        @vm.stub(:run, ->(argv) { calls << argv }) do
+          @vm.stub(:install_ssh, nil) { capture_io { @vm.execute('start', 'test') } }
+        end
+      end
+    end
+    assert_equal ['limactl', 'start', '--tty=false', 'test'], calls.first
+    assert_equal 2, calls.length
+  end
+
+  def test_failed_provisioning_does_not_report_readiness
+    @vm.stub(:info, @state) do
+      @vm.stub(:remote, ->(*) { raise 'provision failed' }) do
+        @vm.stub(:ready, ->(*) { flunk 'Failed configuration reported ready' }) do
+          assert_raises(RuntimeError) { @vm.execute('configure', 'test') }
+        end
+      end
+    end
   end
 end
