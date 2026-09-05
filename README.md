@@ -13,7 +13,10 @@ The Ruby orchestrator uses only standard libraries. Its tests use Minitest
 (`gem install minitest` if it is not already installed). Provisioning installs Ruby
 inside the guest for verification. All maintained scripts are Ruby or Bash.
 Creation downloads an Ubuntu image and installs packages. Provisioning
-installs the latest stable Codex release from npm. The OS image selection comes
+installs the latest stable Codex release with the official standalone installer,
+without requiring Node.js or npm. The root-owned package lives under
+`/usr/local/share/codex`, with its command at `/usr/local/bin/codex`.
+The OS image selection comes
 from the installed Lima Ubuntu 26.04 image template. OS package versions are not pinned.
 
 ```sh

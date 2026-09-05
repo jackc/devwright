@@ -39,7 +39,7 @@ systemctl reload ssh
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   ca-certificates curl git gh jq ripgrep build-essential ruby \
-  nodejs npm zsh unzip bubblewrap apparmor
+  zsh unzip bubblewrap apparmor
 
 printf '%s' '__REQUIREMENTS_B64__' | base64 -d > /etc/codex/requirements.toml
 chmod 644 /etc/codex/requirements.toml
@@ -50,9 +50,18 @@ if [ ! -e /home/dev/.codex/config.toml ]; then
   chmod 600 /home/dev/.codex/config.toml
 fi
 
-npm install --global --prefix /usr/local --ignore-scripts @openai/codex@latest
+# Keep the standalone package root-owned and accessible to dev, outside /root.
+install -d -m 755 /usr/local/share/codex
+codex_installer=$(mktemp)
+trap 'rm -f "$codex_installer"' EXIT
+curl -fsSL https://chatgpt.com/codex/install.sh -o "$codex_installer"
+CODEX_HOME=/usr/local/share/codex CODEX_INSTALL_DIR=/usr/local/bin \
+  CODEX_NON_INTERACTIVE=1 sh "$codex_installer" --release latest
+rm -f "$codex_installer"
+trap - EXIT
 codex_version=$(/usr/local/bin/codex --version)
 printf '%s\n' "$codex_version"
+sudo -u dev -H /usr/local/bin/codex --version
 
 # gh gets this VM's token for login and non-login shells, including Git helpers.
 # No token is embedded in this script, Lima config, or logs.
