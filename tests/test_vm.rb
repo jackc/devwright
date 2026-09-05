@@ -77,22 +77,22 @@ class DevelopmentVMTest < Minitest::Test
 
   def test_invalid_name_never_runs_commands
     @vm.stub(:run, ->(*) { flunk 'Executed a command for invalid input' }) do
-      assert_raises(RuntimeError) { @vm.execute('start', 'test; false') }
+      assert_raises(RuntimeError) { @vm.execute('verify', 'test; false') }
     end
   end
 
-  def test_ssh_migration_preserves_config_and_refreshes_port
+  def test_ssh_install_preserves_personal_config
     Dir.mktmpdir do |home|
       vm = DevelopmentVM.new(home: home)
       dir = File.join(home, '.ssh/agent-vms')
       FileUtils.mkdir_p(dir)
       target = File.join(dir, 'test.config')
-      File.write(target, DevelopmentVM::OLD_HEADER + 'old alias')
+      File.write(target, DevelopmentVM::HEADER + 'old alias')
       config = File.join(home, '.ssh/config')
       original = "Host personal\n  HostName example.invalid\n"
       File.write(config, original)
       vm.stub(:ssh_config, "Host test\n  Port 1234\n") do
-        capture_io { 2.times { vm.install_ssh(@state, add_include: true) } }
+        capture_io { 2.times { vm.install_ssh(@state) } }
       end
       assert File.read(target).start_with?(DevelopmentVM::HEADER)
       assert_equal 1, File.read(config).lines.count { |line| line.chomp == DevelopmentVM::INCLUDE }
@@ -100,8 +100,6 @@ class DevelopmentVMTest < Minitest::Test
       backups = Dir.glob(config + '.before-agent-vms-*')
       assert_equal 1, backups.length
       assert_equal original, File.read(backups.first)
-      vm.stub(:ssh_config, "Host test\n  Port 5678\n") { vm.install_ssh(@state) }
-      assert_includes File.read(target), '5678'
       assert_equal 0o600, File.stat(target).mode & 0o777
     end
   end
@@ -111,7 +109,7 @@ class DevelopmentVMTest < Minitest::Test
       target = File.join(home, '.ssh/agent-vms/test.config')
       FileUtils.mkdir_p(File.dirname(target))
       File.write(target, 'personal content')
-      assert_raises(RuntimeError) { DevelopmentVM.new(home: home).install_ssh(@state, add_include: true) }
+      assert_raises(RuntimeError) { DevelopmentVM.new(home: home).install_ssh(@state) }
       assert_equal 'personal content', File.read(target)
     end
   end
@@ -120,47 +118,69 @@ class DevelopmentVMTest < Minitest::Test
     calls = []
     @vm.stub(:info, @state) do
       @vm.stub(:run, ->(argv, **options) { calls << [argv, options] }) do
-        @vm.stub(:install_ssh, nil) { capture_io { @vm.execute('configure', 'test') } }
+        capture_io { @vm.execute('configure', 'test') }
       end
     end
-    assert_equal 3, calls.length
+    assert_equal 2, calls.length
     args, options = calls.first
     assert_equal ['-l', 'vmadmin', 'lima-test'], args[-4, 3]
     assert_equal %w[sudo -n /bin/bash -s], Shellwords.split(args.last)
     assert_equal @vm.provision, options.fetch(:input)
     assert_equal %w[ruby /usr/local/share/agent-vm/verify.rb], Shellwords.split(calls[1][0].last)
-    assert_equal %w[test -f /usr/local/share/agent-vm/managed], Shellwords.split(calls.last[0].last)
   end
 
   def test_configure_starts_a_stopped_vm_before_setup
     calls = []
     @vm.stub(:info, @state.merge('status' => 'Stopped')) do
       @vm.stub(:run, ->(argv, **options) { calls << argv }) do
-        @vm.stub(:install_ssh, nil) { capture_io { @vm.execute('configure', 'test') } }
+        capture_io { @vm.execute('configure', 'test') }
       end
     end
     assert_equal ['limactl', 'start', '--tty=false', 'test'], calls.first
     assert_equal %w[sudo -n /bin/bash -s], Shellwords.split(calls[1].last)
   end
 
-  def test_start_does_not_provision
-    calls = []
-    @vm.stub(:info, @state) do
-      @vm.stub(:configure, ->(*) { flunk 'Start ran provisioning' }) do
-        @vm.stub(:run, ->(argv) { calls << argv }) do
-          @vm.stub(:install_ssh, nil) { capture_io { @vm.execute('start', 'test') } }
-        end
+  def test_removed_commands_never_run
+    @vm.stub(:run, ->(*) { flunk 'Removed command ran a subprocess' }) do
+      %w[start shell admin].each do |action|
+        assert_raises(RuntimeError) { @vm.execute(action, 'test') }
       end
     end
-    assert_equal ['limactl', 'start', '--tty=false', 'test'], calls.first
-    assert_equal 2, calls.length
   end
 
-  def test_failed_provisioning_does_not_report_readiness
+  def test_failed_provisioning_does_not_verify
+    calls = []
     @vm.stub(:info, @state) do
-      @vm.stub(:remote, ->(*) { raise 'provision failed' }) do
-        @vm.stub(:ready, ->(*) { flunk 'Failed configuration reported ready' }) do
-          assert_raises(RuntimeError) { @vm.execute('configure', 'test') }
+      @vm.stub(:remote, ->(*args, **options) { calls << args; raise 'provision failed' }) do
+        assert_raises(RuntimeError) { @vm.execute('configure', 'test') }
+      end
+    end
+    assert_equal 1, calls.length
+  end
+
+  def test_ssh_uses_current_lima_config_and_separates_users
+    Dir.mktmpdir('ssh fixture ') do |dir|
+      state = @state.merge('dir' => dir)
+      wrapper = File.join(dir, 'wrapper.config')
+      File.write(wrapper, @vm.ssh_config(state))
+      [1234, 5678].each do |port|
+        File.write(File.join(dir, 'ssh.config'), <<~CONFIG)
+          Host lima-test
+            HostName 127.0.0.1
+            Port #{port}
+            User vmadmin
+            ControlMaster auto
+            ControlPath /tmp/admin-socket
+        CONFIG
+        ['lima-test', 'vmadmin@lima-test'].each do |destination|
+          output = @vm.run(['ssh', '-G', '-T', '-F', wrapper, destination], capture: true)
+          options = output.lines.to_h { |line| line.strip.split(' ', 2) }
+          assert_equal port.to_s, options['port']
+          assert_equal(destination.include?('@') ? 'vmadmin' : 'dev', options['user'])
+          assert_equal 'false', options['controlmaster']
+          refute options.key?('controlpath')
+          assert_equal 'none', options['identityagent']
+          assert_equal 'no', options['forwardagent']
         end
       end
     end

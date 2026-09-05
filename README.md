@@ -20,8 +20,8 @@ from the installed Lima Ubuntu 26.04 image template. OS package versions are not
 ruby scripts/vm.rb create agent-dev  # installs and verifies the setup
 ruby scripts/vm.rb install-ssh agent-dev
 
-ssh agent-dev         # dev: development, Codex, repositories
-ssh agent-dev-admin   # vmadmin: VM administration
+ssh lima-agent-dev           # dev: development, Codex, repositories
+ssh vmadmin@lima-agent-dev   # vmadmin: VM administration
 ```
 
 Create another isolated environment with the same recipe:
@@ -39,21 +39,21 @@ It never falls back to running development commands on the host. Existing
 ### Everyday use
 
 ```sh
-ruby scripts/vm.rb start agent-dev
-ruby scripts/vm.rb shell agent-dev   # same account as ssh agent-dev
-ruby scripts/vm.rb admin agent-dev  # administrative session
+limactl start agent-dev
+ssh lima-agent-dev          # development as dev
+ssh vmadmin@lima-agent-dev  # administration
+limactl stop agent-dev
 ```
 
-Use this launcher's `start` command: it removes the host `SSH_AUTH_SOCK` from
-Lima's environment and refreshes installed SSH aliases if Lima changes its port.
-An ordinary `limactl start` does not refresh those aliases; run `install-ssh`
-afterward if needed. The generated aliases disable SSH-agent consultation,
-forwarding, and connection sharing so a `dev` login cannot reuse a `vmadmin` connection.
-The host's other SSH connections keep their existing configuration.
+Lima manages starting, stopping, and deleting VMs. SSH provides interactive access;
+there are no corresponding Ruby wrapper commands. Our SSH entry includes Lima's
+current connection file instead of copying its port, so a normal Lima restart
+requires no SSH refresh. It disables agent forwarding, agent consultation, and
+connection sharing, keeping the two users' sessions separate.
 
-`start` does not run our setup script, install packages, update Codex, or restore
-configuration. Your VM's disk and installed settings persist across restarts.
-Use `verify` whenever you want to recheck the restrictions without updating tools.
+Restarting does not run our setup script or update Codex. Your VM's disk and
+installed settings persist. Use `ruby scripts/vm.rb verify agent-dev` to recheck
+the restrictions without updating tools.
 
 ### GitHub and Codex sign-in
 
@@ -70,7 +70,7 @@ interactive and noninteractive use; system Git configuration uses that helper
 for GitHub HTTPS. `dev` and its agents can read this token by design. An explicitly
 supplied `GH_TOKEN` takes precedence. No primary host credential is imported.
 
-Inside `ssh agent-dev`:
+Inside `ssh lima-agent-dev`:
 
 ```sh
 cd ~/projects
@@ -85,9 +85,9 @@ for your account, use the authentication flow supported by your Codex client.
 Set your Git author name/email as `dev` when needed; provisioning deliberately
 does not copy your host Git configuration.
 
-For the desktop, add **agent-dev** as an SSH host in its remote connection
+For the desktop, add **lima-agent-dev** as an SSH host in its remote connection
 settings, then select a guest directory under `/home/dev/projects`. Use the
-`dev` alias, not `agent-dev-admin` or Lima's generated admin alias. The app may
+`dev` connection, not a connection with the username `vmadmin`. The app may
 install a separate remote runtime; verify its version and effective managed
 policy in a fresh task. Installation of the CLI does not authenticate the desktop.
 
@@ -125,8 +125,8 @@ Explicit provisioning restores policy, SSH settings, public login keys from
 `vmadmin`, and `dev`'s empty supplementary group list. Manual changes to those
 settings survive normal restarts but are overwritten by `configure`.
 If setup fails, fix the cause and rerun `configure`; restarting does not retry it.
-The startup completion marker checks that installation finished; full acceptance
-checks run during `create`, `configure`, and `verify`, not `start`.
+Full acceptance checks run during `create`, `configure`, and `verify`. Lima
+startup does not run our verification.
 
 Resource/image changes in `agent.json` apply to newly created VMs. Change existing
 VM resources with Lima's own stopped-instance editing workflow. Run Ubuntu
@@ -134,9 +134,10 @@ security upgrades administratively as needed; package installation is not a
 substitute for a guest patching policy.
 
 `install-ssh` adds an Include to `~/.ssh/config`, backs up that file before
-changing it, and stores generated aliases under `~/.ssh/agent-vms/`. It refuses
+changing it, and stores a small SSH entry under `~/.ssh/agent-vms/`. The entry includes
+Lima's own SSH configuration and defaults to `dev`; `vmadmin@` overrides the user. It refuses
 to overwrite an unrelated generated-file target or rewrite a symlinked SSH
-config. `ssh-config` prints the aliases instead if you manage SSH configuration
+config. `ssh-config` prints the entry instead if you manage SSH configuration
 through your own dotfiles tooling.
 Create fresh VMs for the Ubuntu 26.04 and `vmadmin` recipe. Migrating VMs made
 with earlier recipes, including boot provisioning, is not supported.
@@ -145,7 +146,7 @@ with earlier recipes, including boot provisioning, is not supported.
 
 * Plain mode disables host filesystem mounts, SSH-agent forwarding, automatic
   port forwarding, and bundled containerd. Use explicit SSH tunnels for previews,
-  for example `ssh -N -L 3000:127.0.0.1:3000 agent-dev`.
+  for example `ssh -N -L 3000:127.0.0.1:3000 lima-agent-dev`.
 * Linux protects `vmadmin` and `/root` from `dev`; managed Codex policy additionally
   denies common sensitive paths, permits workspace writes and direct networking,
   and disables apps, plugins, browser/computer use and configured MCP servers.

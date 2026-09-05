@@ -1,6 +1,26 @@
 # Lima/Codex validation
 
+## Lima lifecycle and SSH simplification
+
+Tested September 5, 2026 using fresh VM `agent-ssh-test`. The Ruby `start`,
+`shell`, and `admin` commands are removed. Creation and explicit configuration
+still verify the guest. SSH defaults to dev at `lima-NAME`; specifying
+`vmadmin@lima-NAME` selects administration without another alias.
+
+The SSH entry now includes Lima's current SSH file rather than parsing and
+copying connection settings. A direct Lima stop/start changed the SSH port;
+the unchanged entry successfully logged in as both users afterward, admin sudo
+worked, and all guest acceptance checks passed. The temporary VM was deleted.
+No host SSH configuration was changed during this test.
+
+All 20 host tests (91 assertions) passed. The SSH test uses OpenSSH's actual
+configuration parser with changing ports, both usernames, a path containing
+spaces, and checks that agent forwarding and connection sharing remain disabled.
+The removed commands are rejected before launching subprocesses. Historical
+sections below retain the old lifecycle and alias names used in those tests.
+
 ## Explicit provisioning lifecycle
+
 
 Tested September 5, 2026 with fresh Ubuntu 26.04 VM `agent-explicit-test`.
 Lima's stored configuration had no provisioning scripts. `create` applied setup
