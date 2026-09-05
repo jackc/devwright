@@ -1,8 +1,0 @@
-# Ubuntu 24.04 restricts user namespaces for otherwise unconfined programs.
-# Permit the root-installed system sandbox helper to create its namespaces.
-# This is a compatibility exception, not the Codex filesystem policy itself.
-abi <abi/4.0>,
-include <tunables/global>
-profile agent-vm-bwrap /usr/bin/bwrap flags=(unconfined) {
-  userns,
-}

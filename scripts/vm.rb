@@ -20,7 +20,6 @@ class DevelopmentVM
     'REQUIREMENTS' => 'config/codex/requirements.toml',
     'CONFIG' => 'config/codex/config.toml',
     'VERIFY' => 'scripts/verify_guest.rb',
-    'APPARMOR' => 'config/apparmor/agent-vm-bwrap',
     'CHECK_CODEX' => 'scripts/check_codex.rb'
   }.freeze
 
@@ -82,7 +81,7 @@ class DevelopmentVM
     unless cfg['plain'] && Array(cfg['mounts']).empty? && !cfg.dig('ssh', 'forwardAgent')
       raise 'Unexpected mounts, forwarding, or non-plain mode; inspect Lima overrides'
     end
-    raise 'Unexpected administrator account' unless cfg.dig('user', 'name') == 'jack'
+    raise 'Unexpected administrator account' unless cfg.dig('user', 'name') == 'vmadmin'
   end
 
   def ssh_args(state, user = 'dev')
@@ -105,7 +104,7 @@ class DevelopmentVM
     body = lines.reject do |line|
       line.strip.empty? || line.lstrip.start_with?('#') || excluded.include?(line.split.first.downcase)
     end
-    [[state.fetch('name'), 'dev'], ["#{state.fetch('name')}-admin", 'jack']].map do |name, user|
+    [[state.fetch('name'), 'dev'], ["#{state.fetch('name')}-admin", 'vmadmin']].map do |name, user|
       "Host #{name}\n  User #{user}\n  IdentityAgent none\n  ForwardAgent no\n" \
         "  ControlMaster no\n  ControlPath none\n#{body.join("\n")}"
     end.join("\n\n") + "\n"
@@ -133,7 +132,7 @@ class DevelopmentVM
       File.write(config, "#{INCLUDE}\n\n#{existing}")
       File.chmod(0o600, config)
     end
-    puts "Installed SSH aliases: #{state['name']} (dev), #{state['name']}-admin (jack)"
+    puts "Installed SSH aliases: #{state['name']} (dev), #{state['name']}-admin (vmadmin)"
   end
 
   def ready(name)
@@ -190,7 +189,7 @@ class DevelopmentVM
     when 'verify'
       remote(state, ['ruby', '/usr/local/share/agent-vm/verify.rb'])
     when 'shell', 'admin'
-      run(ssh_args(state, action == 'admin' ? 'jack' : 'dev').insert(1, '-t'))
+      run(ssh_args(state, action == 'admin' ? 'vmadmin' : 'dev').insert(1, '-t'))
     when 'ssh-config'
       print ssh_config(state)
     when 'install-ssh'

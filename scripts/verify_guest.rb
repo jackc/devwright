@@ -13,7 +13,7 @@ module GuestVerification
     Verification.assert(!ENV.key?('SSH_AUTH_SOCK'), 'Agent socket was forwarded')
     Verification.assert(!Verification.run(['sudo', '-n', 'true']).last.success?, 'dev has sudo access')
     Verification.assert((Process.groups - [Etc.getpwnam('dev').gid]).empty?, 'Unexpected supplementary groups')
-    %w[/home/jack /root].each do |path|
+    %w[/home/vmadmin /root].each do |path|
       begin
         Dir.children(path)
       rescue Errno::EACCES

@@ -14,7 +14,7 @@ class DevelopmentVMTest < Minitest::Test
   def test_render_resolves_payloads
     text = JSON.generate(@vm.render)
     refute_match(/_B64__|__CODEX_VERSION__/, text)
-    assert_equal 'jack', @vm.render.dig('user', 'name')
+    assert_equal 'vmadmin', @vm.render.dig('user', 'name')
     assert_equal true, @vm.render['plain']
   end
 

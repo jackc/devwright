@@ -1,5 +1,38 @@
 # Lima/Codex validation
 
+## Portable administrator account
+
+Tested September 5, 2026 with a fresh `agent-vmadmin-test` VM using Ubuntu
+26.04 and the final recipe. Provisioning and all guest acceptance checks passed.
+The generated admin SSH alias logged in as `vmadmin`, passwordless sudo worked,
+and the account had home `/home/vmadmin` and comment `VM administrator`.
+No `/home/jack` directory or custom AppArmor profile was present. Ubuntu's global
+user-namespace restriction remained enabled (`1`). The temporary VM was removed
+after testing. Historical results below retain the account names used at the time.
+
+All 16 host tests (58 assertions), Bash syntax, Lima template validation, and
+whitespace checks passed. The current recipe requires fresh VMs; no administrator
+account migration is provided.
+
+## Ubuntu 26.04 default
+
+The template now uses `template:_images/ubuntu-26.04`. Tested September 5, 2026
+with a fresh `agent-2604-test` VM: Ubuntu 26.04 LTS arm64, Ruby 3.3.8, Codex
+0.149.0, Lima 2.2.0/VZ. Provisioning and all guest acceptance checks passed.
+The temporary VM was removed after testing. Existing VMs, including the Ubuntu
+24.04 `agent-dev`, were not upgraded or recreated.
+
+Ubuntu 26.04 supplies `/etc/apparmor.d/bwrap-userns-restrict`. The previous
+custom profile caused conflicting attachments for `/usr/bin/bwrap`, preventing
+sandbox startup. The custom profile and all provisioning logic for it have now
+been removed. New VMs rely solely on Ubuntu 26.04's packaged profile; there is no
+older-image fallback or migration logic. The 26.04 test confirmed the custom profile
+was absent and `kernel.apparmor_restrict_unprivileged_userns` remained `1`.
+
+Host tests (16 tests / 58 assertions), Bash syntax, Lima template validation,
+and diff whitespace checks passed. Authentication and desktop integration checks
+remain outside these credential-free tests.
+
 ## Ruby guest verification port
 
 The remaining guest probes are now `scripts/verify_guest.rb` and
@@ -96,8 +129,9 @@ marker that is removed before provisioning and recreated only on success.
 
 Ubuntu initially denied user-namespace creation, preventing Codex's bubblewrap
 sandbox from starting. Installing the system bubblewrap alone was insufficient.
-After explicit user approval, the VM-only AppArmor profile in
-`config/apparmor/agent-vm-bwrap` was installed and the sandbox checks succeeded.
+After explicit user approval, a VM-only custom AppArmor profile was installed
+and the sandbox checks succeeded. That historical 24.04 workaround has since
+been removed from this project; it is preserved in earlier commits only.
 Ubuntu's global unprivileged-user-namespace restriction was not disabled.
 
 ## Remaining user-dependent checks
@@ -123,7 +157,7 @@ Read the other branches without importing their experimental settings wholesale:
   requirements shape with a managed profile table and centrally defined profile.
 
 The user chose direct networking, shared human/agent development as `dev`, and
-administration as `jack`. Earlier recommendations for per-project settings,
+administration as `vmadmin`. Earlier recommendations for per-project settings,
 domain proxies, or Claude configuration are not this implementation's scope.
 
 ## Reference documentation
