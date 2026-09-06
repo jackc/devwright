@@ -77,7 +77,7 @@ func (v *vm) provision() (string, error) {
 	script := string(data)
 	for key, path := range map[string]string{
 		"REQUIREMENTS": "config/codex/requirements.toml", "CONFIG": "config/codex/config.toml",
-		"DOTFILES": "lima/dotfiles.sh", "VERIFY": "scripts/verify_guest.rb", "CHECK_CODEX": "scripts/check_codex.rb",
+		"DOTFILES": "lima/dotfiles.sh", "VERIFY_ARM64": "guestbin/verify-linux-arm64.gz", "VERIFY_AMD64": "guestbin/verify-linux-amd64.gz",
 	} {
 		payload, err := recipe.ReadFile(path)
 		if err != nil {
@@ -155,7 +155,7 @@ func (v *vm) bootstrap(state instance) error {
 }
 
 func (v *vm) verify(state instance) error {
-	return v.remote(state, []string{"ruby", "/usr/local/share/agent-vm/verify.rb"}, "dev", nil)
+	return v.remote(state, []string{"/usr/local/share/agent-vm/verify"}, "dev", nil)
 }
 
 func (v *vm) configure(state instance) error {

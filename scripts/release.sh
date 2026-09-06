@@ -20,6 +20,7 @@ trap 'rm -rf "$staging"' EXIT
 mkdir -p "$staging/licenses"
 cp README.md VALIDATION.md "$staging/"
 go mod download
+bash scripts/build-guest.sh
 for dependency in term sys; do
   module_dir=$(go list -m -f '{{.Dir}}' "golang.org/x/$dependency")
   cp "$module_dir/LICENSE" "$staging/licenses/golang-x-$dependency.txt"

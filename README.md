@@ -12,8 +12,9 @@ Choose a backend: Lima **2.2+** and OpenSSH on macOS/Linux, or a local Incus
 server and OpenSSH (including `ssh-keygen`) on Linux. Lima remains the default;
 pass `--backend incus` on every Incus command. Incus requires no Lima installation.
 The `agent-vm` Go executable embeds the complete recipe and runs from any directory.
-Users of a prebuilt executable need neither Go nor Ruby on the host. Provisioning
-installs Ruby inside the guest for verification. Before operating on an instance,
+Users of a prebuilt executable need no Go compiler on the host or guest. The CLI
+embeds compiled Linux verifiers for arm64 and amd64 and installs the matching
+one inside the guest. Before operating on an instance,
 the CLI checks Lima's version or access to Incus, plus OpenSSH's required options.
 Creation downloads an Ubuntu image and installs packages. Provisioning
 installs the latest stable Codex release with the official standalone installer,
@@ -230,7 +231,8 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | `lima/dotfiles.sh` | Optional per-account dotfiles installation for root and dev |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
-| `scripts/verify_guest.rb` | Credential-free Linux and sandbox acceptance checks |
+| `internal/verification/`, `cmd/agent-vm-verify/` | Go Linux, Codex policy, and sandbox acceptance checks |
+| `scripts/build-guest.sh`, `guestbin/` | Build and embed the Linux guest verifiers |
 
 Install the updated executable, then apply its embedded recipe with `configure`.
 Configuration also updates Codex to the latest stable release. When developing
@@ -354,19 +356,28 @@ See [VALIDATION.md](VALIDATION.md) for the actual VM test results and research p
 The host CLI uses Go's standard library plus `golang.org/x/term` and
 `golang.org/x/sys` for hidden, interruptible token entry. Versions and checksums
 are recorded in `go.mod` and `go.sum`. Source builds require Go 1.25+; guest
-verification and terminal regression tests also require Ruby 3.1+ and Minitest
-(`gem install minitest`). Tests use Git, Bash, and OpenSSH locally, with synthetic
+verification and terminal regression tests are also written in Go. Builds use
+Bash and gzip; tests use Git, Bash, and OpenSSH locally, with synthetic
 data and temporary directories. Terminal regressions open temporary pseudo-terminals;
 they need `/dev/tty` access when run inside a filesystem sandbox.
 
 ```sh
-make check                 # Go tests/vet, guest and terminal tests, Bash syntax
-make build                 # .build/agent-vm, recipe embedded at build time
+make check                 # Go tests/vet, verifier and terminal tests, Bash syntax
+make build                 # .build/agent-vm, recipe and guest verifiers embedded
 go test -race ./...
 make release VERSION=v0.1.0 # four OS/CPU archives and checksums
 # Supply the actual hosting repository to also generate a Homebrew formula:
 make release VERSION=v0.1.0 REPOSITORY=OWNER/REPO
 ```
+
+`make build`, `make test`, and `make check` first cross-compile and compress both
+Linux guest verifiers. For direct `go build` or `go test` commands, run `make guest`
+first and rerun it after changing verifier code. Generated files in `guestbin/`
+are ignored by Git. Releases rebuild them before embedding them in each host binary.
+Provisioning selects the guest architecture with `uname -m`; it installs no Ruby
+or Go runtime. Existing environments need one `configure` run with the rebuilt
+CLI before using its `verify` command, which now invokes the compiled verifier.
+Configuration removes old Ruby/Python verifier files but leaves installed packages alone.
 
 Release files are written to `.build/releases/VERSION/`. Archives contain the
 executable, documentation, and dependency license notices. `CGO_ENABLED=0` keeps

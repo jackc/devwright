@@ -65,7 +65,7 @@ func TestEmbeddedRecipe(t *testing.T) {
 	if strings.Contains(script, "_B64__") {
 		t.Fatal("unresolved payload")
 	}
-	for _, path := range []string{"config/codex/requirements.toml", "config/codex/config.toml", "lima/dotfiles.sh", "scripts/verify_guest.rb", "scripts/check_codex.rb"} {
+	for _, path := range []string{"config/codex/requirements.toml", "config/codex/config.toml", "lima/dotfiles.sh", "guestbin/verify-linux-arm64.gz", "guestbin/verify-linux-amd64.gz"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -166,7 +166,7 @@ func TestConfigureLifecycle(t *testing.T) {
 		if len(calls) != 2 || calls[0].input != provision || !reflect.DeepEqual(calls[0].args, append(sshArgs(state, "root"), shellJoin([]string{"/bin/bash", "-s"}))) {
 			t.Fatalf("configure ordering: %+v", calls)
 		}
-		if !reflect.DeepEqual(calls[1].args, append(sshArgs(state, "dev"), shellJoin([]string{"ruby", "/usr/local/share/agent-vm/verify.rb"}))) {
+		if !reflect.DeepEqual(calls[1].args, append(sshArgs(state, "dev"), shellJoin([]string{"/usr/local/share/agent-vm/verify"}))) {
 			t.Fatalf("verify command: %v", calls[1].args)
 		}
 	}

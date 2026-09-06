@@ -38,7 +38,7 @@ systemctl reload ssh
 
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-  ca-certificates curl git gh jq ripgrep build-essential ruby \
+  ca-certificates curl git gh jq ripgrep build-essential gzip \
   zsh unzip bubblewrap apparmor
 
 printf '%s' '__REQUIREMENTS_B64__' | base64 -d > /etc/codex/requirements.toml
@@ -85,12 +85,20 @@ if [ -n "$dotfiles_repository" ]; then
   /bin/bash /usr/local/share/agent-vm/dotfiles.sh "$dotfiles_repository" "$dotfiles_install"
 fi
 
-printf '%s' '__VERIFY_B64__' | base64 -d > /usr/local/share/agent-vm/verify.rb
-chmod 755 /usr/local/share/agent-vm/verify.rb
-printf '%s' '__CHECK_CODEX_B64__' | base64 -d > /usr/local/share/agent-vm/check_codex.rb
-chmod 755 /usr/local/share/agent-vm/check_codex.rb
-# Remove only the obsolete probes installed by previous versions of this recipe.
-rm -f /usr/local/share/agent-vm/verify.py /usr/local/share/agent-vm/check_codex.py
+# Select the verifier for the guest architecture, independently of the host.
+verify_tmp=$(mktemp /usr/local/share/agent-vm/verify.XXXXXX)
+trap 'rm -f "$verify_tmp"' EXIT
+case "$(uname -m)" in
+  aarch64|arm64) printf '%s' '__VERIFY_ARM64_B64__' ;;
+  x86_64|amd64) printf '%s' '__VERIFY_AMD64_B64__' ;;
+  *) echo 'Unsupported guest architecture for verification' >&2; exit 1 ;;
+esac | base64 -d | gzip -d > "$verify_tmp"
+chmod 755 "$verify_tmp"
+mv -f "$verify_tmp" /usr/local/share/agent-vm/verify
+trap - EXIT
+# Remove only obsolete probes installed by previous versions of this recipe.
+rm -f /usr/local/share/agent-vm/verify.py /usr/local/share/agent-vm/check_codex.py \
+  /usr/local/share/agent-vm/verify.rb /usr/local/share/agent-vm/check_codex.rb
 printf '%s\n' 'agent-sandbox-config-v1' > /usr/local/share/agent-vm/managed
 printf '%s\n' "$codex_version" > /usr/local/share/agent-vm/codex-version
 echo 'Provisioned: root administers; dev develops. No credentials were copied.'

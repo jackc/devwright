@@ -1,5 +1,30 @@
 # Lima, Incus, and Codex validation
 
+## Go verification and terminal test port
+
+Tested September 6, 2026 on macOS arm64. The guest acceptance checks and their
+regression tests now live in `internal/verification`; the guest entry point is
+`cmd/agent-vm-verify`. Real PTY regressions are Go tests in the host package.
+The previous Ruby probes and Minitest suites have been removed. Earlier sections
+below describe historical validation of the preceding implementations.
+
+- `make check` passed: Go tests, vet, standalone CLI rendering outside the
+  checkout, hidden token input and terminal restoration for success/Ctrl-C/SIGTERM,
+  and Bash syntax checks. PTY tests required host `/dev/tty` access.
+- `go test -race ./...` passed. Verifier regressions cover buffered app-server
+  replies, notifications, timeout/EOF/error handling, subprocess output and exit
+  status, descendant cleanup, managed-policy rejection, and synthetic canary
+  preservation/cleanup, including an existing dangling symlink.
+- Both embedded gzip payloads were decoded and checked as static Linux ELF
+  binaries for their expected arm64/amd64 architecture.
+- `make release VERSION=v0.0.0-test` built all four host archives and checksums
+  locally; nothing was published.
+
+Fresh guest provisioning and live Codex sandbox acceptance have not been rerun
+for this port. Fake Codex responses test orchestration and failure handling,
+not actual sandbox enforcement. Existing VMs need `configure` with the rebuilt
+CLI to install the compiled verifier before running its `verify` action.
+
 ## Incus backend: Linux host and unprivileged containers
 
 Tested September 5, 2026 on an Apple M3 Max running macOS, with Lima 2.2.0/VZ.

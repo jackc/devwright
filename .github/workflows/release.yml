@@ -12,10 +12,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.3'
-      - run: gem install minitest --no-document
       - run: make check
       - run: go test -race ./...
       - name: Build archives, checksums, and Homebrew formula
