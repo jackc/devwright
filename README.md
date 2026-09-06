@@ -8,10 +8,11 @@ without sudo, in `/home/dev/projects`. Projects in one VM share that account's
 files and credentials. Use another VM when they need separate access.
 Administration uses key-only SSH as `root`.
 
-Requirements on the host: Lima **2.2+**, Ruby **3.1+**, and OpenSSH.
-The Ruby orchestrator uses only standard libraries. Its tests use Minitest
-(`gem install minitest` if it is not already installed). Provisioning installs Ruby
-inside the guest for verification. All maintained scripts are Ruby or Bash.
+Requirements on the host: Lima **2.2+** and OpenSSH, on macOS or Linux.
+The `agent-vm` Go executable embeds the complete recipe and runs from any directory.
+Users of a prebuilt executable need neither Go nor Ruby on the host. Provisioning
+installs Ruby inside the guest for verification. The CLI checks Lima's version
+and OpenSSH's required options before operating on a VM.
 Creation downloads an Ubuntu image and installs packages. Provisioning
 installs the latest stable Codex release with the official standalone installer,
 without requiring Node.js or npm. The root-owned package lives under
@@ -19,21 +20,49 @@ without requiring Node.js or npm. The root-owned package lives under
 The OS image selection comes
 from the installed Lima Ubuntu 26.04 image template. OS package versions are not pinned.
 
+### Install
+
+From a source checkout, install Go **1.25+**, then build the executable:
+
 ```sh
-# Run from this repository on the host.
-ruby scripts/vm.rb create agent-dev  # installs and verifies the setup
-ruby scripts/vm.rb install-ssh agent-dev
+make build
+mkdir -p ~/.local/bin
+install -m 755 .build/agent-vm ~/.local/bin/agent-vm
+export PATH="$HOME/.local/bin:$PATH"  # also add this to your shell startup file
+```
+
+On macOS, install Lima with `brew install lima`. For other hosts, follow
+[Lima's installation instructions](https://lima-vm.io/docs/installation/).
+
+Maintainers can build precompiled release archives and a Homebrew formula using
+[the release process below](#development-and-releases). To install an archive,
+extract the one matching your OS (`darwin` for macOS, `linux` for Linux) and CPU
+(`arm64` for Apple Silicon/ARM, `amd64` for Intel/AMD), then install its `agent-vm`
+executable into a directory on PATH. Verify its SHA-256 against the release's
+`checksums.txt`. Release publication and a Homebrew tap must be set up in the
+hosting repository; this source tree does not assume a particular GitHub owner.
+
+```sh
+agent-vm --version
+agent-vm --help
+agent-vm create agent-dev  # installs and verifies the setup
+agent-vm install-ssh agent-dev
 
 ssh lima-agent-dev           # dev: development, Codex, repositories
 ssh root@lima-agent-dev   # root: VM administration
 ```
 
-Create another isolated environment with the same recipe:
+Create another isolated environment with the same recipe, optionally changing resources:
 
 ```sh
-ruby scripts/vm.rb create another-dev
-ruby scripts/vm.rb install-ssh another-dev
+agent-vm create another-dev --cpus 8 --memory 8GiB --disk 100GiB
+agent-vm install-ssh another-dev
 ```
+
+Resource flags apply only to `create` and `render`; omitted values use 4 CPUs,
+4 GiB memory, and a 60 GiB sparse disk. Sizes accept positive whole numbers with
+`MiB`, `GiB`, or `TiB` units. `agent-vm render` prints the embedded Lima recipe
+without contacting Lima or SSH. Options can precede or follow the action/name.
 
 `create` refuses an existing name. The launcher checks that `dev` is the primary account
 and rejects host mounts, agent forwarding, non-plain mode, or boot provisioning.
@@ -50,7 +79,7 @@ limactl stop agent-dev
 ```
 
 Lima manages starting, stopping, and deleting VMs. SSH provides interactive access;
-there are no corresponding Ruby wrapper commands. Our SSH entry includes Lima's
+there are no corresponding CLI wrapper commands. Our SSH entry includes Lima's
 current connection file instead of copying its port, so a normal Lima restart
 requires no SSH refresh. It disables agent forwarding and agent consultation.
 Connection sharing uses `~/.ssh/control-%C`: OpenSSH's hash includes the remote
@@ -60,7 +89,7 @@ included settings, overriding its single control socket per VM. Rerun
 `install-ssh` to update a previously installed entry.
 
 Restarting does not run our setup script or update Codex. Your VM's disk and
-installed settings persist. Use `ruby scripts/vm.rb verify agent-dev` to recheck
+installed settings persist. Use `agent-vm verify agent-dev` to recheck
 the restrictions without updating tools.
 
 ### GitHub and Codex sign-in
@@ -68,7 +97,7 @@ the restrictions without updating tools.
 Supply a fine-grained GitHub token for each VM interactively from the host:
 
 ```sh
-ruby scripts/vm.rb set-token agent-dev
+agent-vm set-token agent-dev
 ```
 
 The prompt hides input. The token travels on SSH stdin and is stored with mode
@@ -103,6 +132,8 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 
 | File | Responsibility |
 | --- | --- |
+| `cli.go`, `vm.go`, `process.go`, `terminal.go`, `ssh.go` | Host CLI, orchestration, subprocesses, terminal input, and SSH configuration |
+| `assets.go` | Embeds the recipe at build time |
 | `lima/agent.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
 | `lima/bootstrap.sh` | Creation-only setup of key-based root SSH |
 | `lima/provision.sh` | Repeatable OS, account, SSH, GitHub helper, and Codex installation |
@@ -111,13 +142,15 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
 | `scripts/verify_guest.rb` | Credential-free Linux and sandbox acceptance checks |
 
-Edit the shared source, then apply it to an existing VM. This also updates Codex
-to the latest stable release. The version installed during provisioning is recorded
+Install the updated executable, then apply its embedded recipe with `configure`.
+Configuration also updates Codex to the latest stable release. When developing
+the recipe, rebuild and reinstall after editing the shared source.
+The version installed during provisioning is recorded
 in `/usr/local/share/agent-vm/codex-version` for diagnostics; verification checks
 actual policy behavior rather than requiring that exact version:
 
 ```sh
-ruby scripts/vm.rb configure agent-dev  # applies the recipe and verifies it
+agent-vm configure agent-dev  # applies the recipe and verifies it
 ```
 
 During creation, Lima initially grants `dev` sudo. The creation-only bootstrap
@@ -128,8 +161,10 @@ on the host. The template's `passwordlessSudo: true` is only for this bootstrap;
 completed VMs deny sudo to `dev`.
 
 `configure` sends the current Bash setup script and embedded policy files
-directly over root SSH. Lima stores no setup script to replay on boot. Editing this repository takes effect on an existing VM
-only when you explicitly run `configure`.
+directly over root SSH. Lima stores no setup script to replay on boot. Recipe
+edits take effect only after rebuilding the executable and explicitly running
+`configure`. Updating the
+executable alone does not modify existing VMs.
 
 `configure` applies setup to a running VM without rebooting it; if stopped, it
 starts the VM first. It installs the latest Codex, updates managed policy and
@@ -142,8 +177,8 @@ are idle because it updates installed software and reloads SSH configuration.
 Pass your own Git repository when creating or configuring a VM:
 
 ```sh
-ruby scripts/vm.rb create my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git
-ruby scripts/vm.rb configure my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git --dotfiles-install setup.sh
+agent-vm create my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git
+agent-vm configure my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git --dotfiles-install setup.sh
 ```
 
 No dotfiles are installed by default. The default installer is `install`; use
@@ -179,8 +214,9 @@ If setup fails, fix the cause and rerun `configure`; restarting does not retry i
 Full acceptance checks run during `create`, `configure`, and `verify`. Lima
 startup does not run our verification.
 
-Resource/image changes in `agent.json` apply to newly created VMs. Change existing
-VM resources with Lima's own stopped-instance editing workflow. Run Ubuntu
+Resource/image changes in `agent.json` apply to newly created VMs after rebuilding.
+Use `--cpus`, `--memory`, and `--disk` for per-VM resource choices during creation.
+Change existing VM resources with Lima's own stopped-instance editing workflow. Run Ubuntu
 security upgrades administratively as needed; package installation is not a
 substitute for a guest patching policy.
 
@@ -188,7 +224,8 @@ substitute for a guest patching policy.
 changing it, and stores a small SSH entry under `~/.ssh/agent-vms/`. The entry includes
 Lima's own SSH configuration and defaults to `dev`; `root@` overrides the user. It refuses
 to overwrite an unrelated generated-file target or rewrite a symlinked SSH
-config. `ssh-config` prints the entry instead if you manage SSH configuration
+config. Existing entries generated by the Ruby CLI are recognized and updated.
+`ssh-config` prints the entry instead if you manage SSH configuration
 through your own dotfiles tooling.
 Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user. Migrating VMs made
 with earlier recipes, including boot provisioning, is not supported.
@@ -219,10 +256,42 @@ with earlier recipes, including boot provisioning, is not supported.
   allowed and one **disallowed private repository**; public repositories are not
   a valid negative test. No network allowlist or Claude setup is included.
 
-Local checks: `ruby tests/test_vm.rb`, `ruby tests/test_verification.rb`,
-`bash -n lima/provision.sh`, and `bash -n lima/dotfiles.sh`.
 `create` also validates the generated Lima YAML.
 See [VALIDATION.md](VALIDATION.md) for the actual VM test results and research provenance.
+
+### Development and releases
+
+The host CLI uses Go's standard library plus `golang.org/x/term` and
+`golang.org/x/sys` for hidden, interruptible token entry. Versions and checksums
+are recorded in `go.mod` and `go.sum`. Source builds require Go 1.25+; guest
+verification and terminal regression tests also require Ruby 3.1+ and Minitest
+(`gem install minitest`). Tests use Git, Bash, and OpenSSH locally, with synthetic
+data and temporary directories. Terminal regressions open temporary pseudo-terminals;
+they need `/dev/tty` access when run inside a filesystem sandbox.
+
+```sh
+make check                 # Go tests/vet, guest and terminal tests, Bash syntax
+make build                 # .build/agent-vm, recipe embedded at build time
+go test -race ./...
+make release VERSION=v0.1.0 # four OS/CPU archives and checksums
+# Supply the actual hosting repository to also generate a Homebrew formula:
+make release VERSION=v0.1.0 REPOSITORY=OWNER/REPO
+```
+
+Release files are written to `.build/releases/VERSION/`. Archives contain the
+executable, documentation, and dependency license notices. `CGO_ENABLED=0` keeps
+builds free of C library dependencies on Linux. macOS binaries still use OS
+libraries. Builds cover macOS/Linux on arm64/amd64; full VM acceptance has been
+exercised on macOS arm64. Cross-compilation alone does not validate other hosts'
+virtualization setup.
+
+GitHub Actions runs checks on macOS and Linux. Pushing a `vX.Y.Z` tag runs checks,
+builds the four archives and Homebrew formula using the hosting repository's name,
+and creates a **draft** GitHub release. Review and publish the draft, then copy
+its generated `agent-vm.rb` into `Formula/agent-vm.rb` in your Homebrew tap. Users
+can then install with `brew install OWNER/TAP/agent-vm`; the formula depends on
+Lima. Replace OWNER/TAP with the actual tap name. No public release or tap is
+created by a local build.
 
 ## Original project goals
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sent by scripts/vm.rb over admin SSH during create/configure only.
+# Embedded in agent-vm and sent over admin SSH during create/configure only.
 set -euo pipefail
 umask 022
 export DEBIAN_FRONTEND=noninteractive

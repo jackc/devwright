@@ -1,0 +1,197 @@
+package agentvm
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
+)
+
+const usage = `Usage: agent-vm ACTION [NAME] [OPTIONS]
+Actions: render, create, configure, verify, ssh-config, install-ssh, set-token
+Default VM: agent-dev
+
+Options (may appear before or after the action):
+  --dotfiles-repo URL      Install this Git repository for root and dev (create/configure)
+  --dotfiles-install PATH  Installer relative to the repository (default: install)
+  --cpus N                CPUs for a new VM (default: 4; create/render only)
+  --memory SIZE           Memory for a new VM, e.g. 8GiB (default: 4GiB; create/render only)
+  --disk SIZE             Disk for a new VM, e.g. 100GiB (default: 60GiB; create/render only)
+  --version               Print the CLI/embedded recipe version
+  -h, --help              Show this help
+
+Use limactl start/stop/delete for VM lifecycle and ssh lima-NAME for development.
+`
+
+type options struct {
+	action, name, dotfilesRepo, dotfilesInstall, memory, disk string
+	cpus                                                      int
+	help, version                                             bool
+	set                                                       map[string]bool
+}
+
+var validName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+var validSize = regexp.MustCompile(`^[1-9][0-9]*(MiB|GiB|TiB)$`)
+
+func parseOptions(args []string) (options, error) {
+	o := options{name: "agent-dev", set: map[string]bool{}}
+	f := flag.NewFlagSet("agent-vm", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	f.BoolVar(&o.help, "help", false, "")
+	f.BoolVar(&o.help, "h", false, "")
+	f.BoolVar(&o.version, "version", false, "")
+	f.StringVar(&o.dotfilesRepo, "dotfiles-repo", "", "")
+	f.StringVar(&o.dotfilesInstall, "dotfiles-install", "install", "")
+	f.IntVar(&o.cpus, "cpus", 0, "")
+	f.StringVar(&o.memory, "memory", "", "")
+	f.StringVar(&o.disk, "disk", "", "")
+	var positional []string
+	// flag stops at the first positional argument; resume parsing to retain the
+	// previous CLI's support for options on either side of ACTION and NAME.
+	for len(args) > 0 {
+		if args[0] == "--" {
+			positional = append(positional, args[1:]...)
+			break
+		}
+		if args[0] == "-" || !strings.HasPrefix(args[0], "-") {
+			positional = append(positional, args[0])
+			args = args[1:]
+			continue
+		}
+		key, _, hasValue := strings.Cut(strings.TrimLeft(args[0], "-"), "=")
+		count := 1
+		if entry := f.Lookup(key); entry != nil && !hasValue {
+			boolean, ok := entry.Value.(interface{ IsBoolFlag() bool })
+			if (!ok || !boolean.IsBoolFlag()) && len(args) > 1 {
+				count = 2
+			}
+		}
+		if err := f.Parse(args[:count]); err != nil {
+			return o, err
+		}
+		args = args[count:]
+	}
+	f.Visit(func(f *flag.Flag) { o.set[f.Name] = true })
+	if o.help || o.version {
+		return o, nil
+	}
+	if len(positional) < 1 || len(positional) > 2 {
+		return o, errors.New(usage)
+	}
+	o.action = positional[0]
+	if len(positional) == 2 {
+		o.name = positional[1]
+	}
+	switch o.action {
+	case "render", "create", "configure", "verify", "ssh-config", "install-ssh", "set-token":
+	default:
+		return o, fmt.Errorf("unknown action: %s; use --help", o.action)
+	}
+	if !validName.MatchString(o.name) {
+		return o, errors.New("VM name must start with a letter and contain only lowercase letters, digits, and hyphens (maximum 40 characters)")
+	}
+	if o.set["dotfiles-install"] && !o.set["dotfiles-repo"] {
+		return o, errors.New("--dotfiles-install requires --dotfiles-repo")
+	}
+	if o.set["dotfiles-repo"] {
+		if o.action != "create" && o.action != "configure" {
+			return o, errors.New("dotfiles options apply only to create and configure")
+		}
+		if o.dotfilesRepo == "" || strings.HasPrefix(o.dotfilesRepo, "-") || strings.ContainsRune(o.dotfilesRepo, 0) {
+			return o, errors.New("expected a dotfiles Git repository URL")
+		}
+	}
+	if o.dotfilesInstall == "" || strings.HasPrefix(o.dotfilesInstall, "/") || strings.ContainsRune(o.dotfilesInstall, 0) {
+		return o, errors.New("dotfiles installer must be a relative path within the repository")
+	}
+	for _, part := range strings.Split(o.dotfilesInstall, "/") {
+		if part == ".." {
+			return o, errors.New("dotfiles installer must be a relative path within the repository")
+		}
+	}
+	for _, key := range []string{"cpus", "memory", "disk"} {
+		if o.set[key] && o.action != "create" && o.action != "render" {
+			return o, errors.New("resource options apply only to create and render; edit existing VM resources with Lima")
+		}
+	}
+	if o.set["cpus"] && o.cpus < 1 {
+		return o, errors.New("--cpus must be a positive integer")
+	}
+	for key, value := range map[string]string{"memory": o.memory, "disk": o.disk} {
+		if o.set[key] && !validSize.MatchString(value) {
+			return o, fmt.Errorf("--%s must be a positive whole number with MiB, GiB, or TiB units (e.g. 8GiB)", key)
+		}
+	}
+	return o, nil
+}
+
+// Run executes the CLI. Rendering and help work without Lima or SSH installed.
+func Run(ctx context.Context, args []string, version string, stdin io.Reader, stdout, stderr io.Writer) error {
+	o, err := parseOptions(args)
+	if err != nil {
+		return err
+	}
+	if o.help {
+		_, err = io.WriteString(stdout, usage)
+		return err
+	}
+	if o.version {
+		_, err = fmt.Fprintf(stdout, "agent-vm %s\n", version)
+		return err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	v := vm{options: o, home: home, out: stdout, run: commandRunner(ctx, stdin, stdout, stderr),
+		readToken: func() (string, error) { return readToken(ctx) }}
+	if o.action != "render" {
+		if err := preflight(v.run, exec.LookPath, runtime.GOOS); err != nil {
+			return err
+		}
+	}
+	return v.execute()
+}
+
+var limaVersion = regexp.MustCompile(`(?m)^limactl version v?([0-9]+)\.([0-9]+)\.([0-9]+)([^\s]*)`)
+
+func preflight(run runner, lookPath func(string) (string, error), goos string) error {
+	if goos != "darwin" && goos != "linux" {
+		return errors.New("agent-vm supports macOS and Linux hosts")
+	}
+	for _, name := range []string{"limactl", "ssh"} {
+		if _, err := lookPath(name); err != nil {
+			if name == "limactl" {
+				return errors.New("Lima 2.2+ is required; on macOS run: brew install lima; see https://lima-vm.io/docs/installation/")
+			}
+			return errors.New("OpenSSH is required; install your operating system's OpenSSH client and ensure ssh is on PATH")
+		}
+	}
+	output, err := run([]string{"limactl", "--version"}, nil, true)
+	if err != nil {
+		return err
+	}
+	m := limaVersion.FindStringSubmatch(output)
+	if len(m) == 0 {
+		return errors.New("could not determine Lima version; install Lima 2.2+ (stable)")
+	}
+	major, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	if major < 2 || (major == 2 && minor < 2) || strings.HasPrefix(m[4], "-") {
+		return errors.New("Lima 2.2+ (stable) is required; upgrade Lima before continuing")
+	}
+	// Ask OpenSSH to parse the required settings without making a connection.
+	_, err = run([]string{"ssh", "-G", "-T", "-F", os.DevNull, "-o", "IdentityAgent=none", "-o", "ForwardAgent=no",
+		"-o", "ControlPath=~/.ssh/control-%C", "-o", "ControlMaster=auto", "-o", "ControlPersist=60", "lima-check"}, nil, true)
+	if err != nil {
+		return fmt.Errorf("OpenSSH does not accept the required connection settings: %w", err)
+	}
+	return nil
+}

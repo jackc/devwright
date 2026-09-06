@@ -1,5 +1,50 @@
 # Lima/Codex validation
 
+## Go host CLI and distribution
+
+Tested September 5, 2026 with Go 1.26.5 and Lima 2.2.0 on macOS arm64.
+The host entry point is now `agent-vm`; guest provisioning remains Bash and
+guest acceptance probes remain Ruby. Go embeds the template, policies, and
+scripts in the executable. Parsed default Go and Ruby Lima recipes compared
+equal before removing the old host orchestrator.
+
+Created a fresh Ubuntu 26.04 VM, `agent-go-port-test`, by running the compiled
+executable from `/tmp` with `--cpus 2 --memory 2GiB --disk 20GiB`. Creation,
+root bootstrap, provisioning, and all credential-free guest checks passed with
+Codex 0.153.4. Explicit configuration passed without changing the boot ID.
+A Lima stop/start changed the boot ID and SSH port, preserved the provisioning
+marker's timestamp, and passed all guest checks again. The same generated SSH
+entry worked for dev and root across that restart. Creation with the existing
+name was refused. The disposable VM was removed afterward; existing VMs and
+the user's SSH configuration were not modified.
+
+Token transport was exercised with synthetic input only. The actual terminal
+hid the input, and the guest stored it with mode 0600. Real pseudo-terminal
+regressions check successful entry, Ctrl-C, and SIGTERM: cancellation returns
+promptly, restores terminal settings, and never sends a token. These regressions
+passed on both macOS arm64 and Ubuntu 26.04 arm64. They caught and fixed a macOS
+hang caused by closing a terminal with an outstanding blocking read; input now
+uses nonblocking reads with bounded polling. Darwin's transient PENDIN kernel
+flag is excluded from the terminal-setting comparison.
+
+`make check` and `go test -race ./...` passed. Go tests cover argument and
+environment handling, embedded payloads, resource options, prerequisite errors,
+unsafe/malformed VM refusal, bootstrap/configuration ordering and failure stops,
+token stdin transport, repeatable dotfiles installation, and SSH file migration,
+preservation, symlink refusal, and user/port connection separation. The existing
+five Ruby guest-verifier tests and three terminal regression tests passed.
+
+Release archives cross-built for macOS/Linux on arm64/amd64 with checksums and
+dependency license notices. The macOS ARM archive ran outside the checkout;
+the Linux ARM archive ran inside the disposable guest. Both rendered their
+embedded recipe and reported the build version. Archive contents, checksums,
+binary architectures, generated Homebrew formula hashes and Ruby syntax, workflow
+YAML, and diff whitespace were checked. Test archives use `v0.1.0-test`; this is
+not a published release. GitHub Actions and release/tap publication are prepared
+but have not run remotely because this checkout has no Git remote. Full Lima
+host acceptance on Linux and Intel macOS remains untested. Historical validation
+sections below retain the commands and account names used at the time.
+
 ## Optional dotfiles provisioning
 
 Tested September 5, 2026 on fresh Ubuntu 26.04 VM `agent-dotfiles-test`,
@@ -206,7 +251,7 @@ Implemented and exercised on September 5, 2026:
 
 ## Checks and findings
 
-The maintained acceptance command is `ruby scripts/vm.rb verify agent-dev`.
+The maintained acceptance command is `agent-vm verify agent-dev`.
 It uses SSH as `dev`, no model invocation, no real credentials, and a synthetic
 `.pgpass` that is removed afterward. It refuses to overwrite a preexisting file.
 
