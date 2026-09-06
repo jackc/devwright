@@ -29,7 +29,7 @@ this Mac today with the local `claude` binary; nothing has run in a guest yet.
 | `[mcp_servers]` empty (locally configured servers disabled) | `allowedMcpServers: []` (an empty allowlist admits no configured server), `allowManagedMcpServersOnly: true`, `enableAllProjectMcpServers: false` | managed |
 | `features.plugins = false` | `strictKnownMarketplaces: []`, `disableSideloadFlags: true`, `channelsEnabled: false` | managed |
 | `features.browser_use`, `in_app_browser`, `computer_use = false` | `deniedMcpServers` naming the built-in `claude-in-chrome` and `computer-use` servers, which are exempt from the allowlist but not from the denylist. The desktop app's in-process tools are outside both lists (see limits) | managed |
-| Codex updated by `configure` only | apt package on the `stable` channel; `env.DISABLE_UPDATES = "1"` so the binary never self-updates | provisioning, managed |
+| Codex updated by `configure` only | apt package on the `latest` channel; `env.DISABLE_UPDATES = "1"` so the binary never self-updates | provisioning, managed |
 | `~/.codex/config.toml` initial dev defaults, preserved afterwards | `~/.claude/settings.json` initial dev defaults, preserved afterwards | [config/claude/settings.json](config/claude/settings.json) |
 | `--codex-requirements`, `--reset-codex-requirements`, `--codex-config`, `--replace-codex-config` | `--claude-managed-settings`, `--reset-claude-managed-settings`, `--claude-config`, `--replace-claude-config` | host CLI |
 | `codex sandbox -P vm_dev` probe in the verifier | A loopback Messages API stub drives `claude -p --bare` through one Bash command; the real sandbox applies | guest verifier |
@@ -77,19 +77,23 @@ Provisioning adds, as root:
 install -d -m 755 /etc/apt/keyrings
 curl -fsSL https://downloads.claude.ai/keys/claude-code.asc -o /etc/apt/keyrings/claude-code.asc
 # Refuse to continue unless the key fingerprint is 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE (verified today).
-echo 'deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main' \
+echo 'deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/latest latest main' \
   > /etc/apt/sources.list.d/claude-code.list
 apt-get update -qq
 apt-get install -y --no-install-recommends claude-code socat
 ```
 
 `bubblewrap` is already installed for Codex; Claude Code's Linux sandbox needs
-`bubblewrap` and `socat`. The stable channel is about a week behind `latest`
-and skips releases with major regressions; the policy keys used here need
-2.1.219 or later, and the verifier checks that floor. `configure` upgrades the
-package on each run, matching "configuration also updates Codex". The installed
-version is recorded in `/usr/local/share/dev-sandbox/claude-version`. The apt
-key is pinned by fingerprint in the script rather than trusted blindly.
+`bubblewrap` and `socat`. The recipe follows the `latest` channel, as it does
+for Codex. The `stable` channel was first proposed, but on the day of the guest
+run it served 2.1.236, a month behind `latest` at 2.1.263: that release prints
+no sandbox posture on Linux and rejects the newer session flags, so the
+verifier could neither read the posture nor rely on the flags. The policy keys
+used here need 2.1.219 or later, and the verifier checks that floor; it also
+tolerates a release without the posture report and says so. `configure`
+upgrades the package on each run, matching "configuration also updates Codex".
+The installed version is recorded in `/usr/local/share/dev-sandbox/claude-version`.
+The apt key is pinned by fingerprint in the script rather than trusted blindly.
 
 Alternative considered: the official `install.sh` run as root with a private
 `HOME` under `/usr/local/share/claude`. It works but leaves a fake home, writes
@@ -201,17 +205,25 @@ section identical in structure to the Codex one, driven by
 package install runs before the files are installed so `claude --version`
 can be recorded and `sudo -u dev -H claude --version` proves dev can run it.
 
-Ubuntu 26.04's packaged bubblewrap AppArmor profile is what lets Codex's
-bubblewrap sandbox run; Claude Code invokes the same `/usr/bin/bwrap`. The
-recipe should keep relying on that profile and let acceptance decide. If
-`claude sandbox status` in the guest reports the sandbox unavailable, the
-documented fallback is Anthropic's `/etc/apparmor.d/bwrap` profile, which grants
-only `bwrap` the user-namespace capability. Incus containers may additionally
-need `sandbox.enableWeakerNestedSandbox: true` because bubblewrap cannot mount a
+Ubuntu 26.04's packaged `bwrap-userns-restrict` profile lets Codex's
+bubblewrap sandbox run, but it confines every command bubblewrap launches to a
+child profile that denies capabilities. The first guest run showed Claude Code
+2.1.263 failing every sandboxed command with `apply-seccomp: write
+/proc/self/setgroups (nested userns is capability-restricted)`: its bundled
+seccomp filter creates a nested user namespace, which that child profile
+forbids. The recipe therefore disables the stock profile through
+`/etc/apparmor.d/disable/` and installs Anthropic's documented
+`/etc/apparmor.d/bwrap` profile (`flags=(unconfined)` with `userns`, ABI 5.0 on
+26.04). The global `kernel.apparmor_restrict_unprivileged_userns` restriction
+stays on; only `bwrap` may create user namespaces, and sandboxed commands are
+confined by bubblewrap's namespaces and each agent's own sandbox instead of the
+capability-denying child profile. With that profile in place the lab passed
+inside the guest. Incus containers may additionally need
+`sandbox.enableWeakerNestedSandbox: true` because bubblewrap cannot mount a
 fresh `/proc` in an unprivileged container; Codex's probe passed in such
 containers, so try without it first and add it per instance only if the probe
-fails. The Linux seccomp filter that blocks Unix sockets is an optional npm
-package and is not installed; see limits.
+fails. Claude Code 2.1.263 bundles its seccomp filter, so Unix sockets are
+blocked inside the sandbox on Linux.
 
 ## Verification in the guest
 
@@ -229,9 +241,9 @@ Everything below is credential-free and uses synthetic files only.
    `enabled: true`, `enabledSource: "policy"`, `strictMode: true`,
    `strictModeSource: "policy"` and `filesystemPolicy: "strict"`. This is the
    posture the local binary reports for the embedded file supplied through
-   `--settings` (**verified**); the guest run will confirm the same values for
-   the managed path and pin them, including the `policyLocked` field, in the
-   verifier.
+   `--settings` and, since the guest runs, what Claude Code 2.1.263 reports for
+   the managed file on Linux (**verified**). Releases that print only the
+   legacy status object skip this comparison with a NOT TESTED line.
 4. `claude doctor` output is captured for diagnostics only; it is prose.
 5. **Sandbox behaviour probe, embedded policy only.** The verifier starts a
    loopback HTTP stub of the Messages API on `127.0.0.1:0`, then runs, as dev,
@@ -276,7 +288,7 @@ host-side reproduction; run it from a terminal.
 ## Restricted native users (`--backend user`)
 
 The enforced boundary stays the OS account, as for Codex. Claude Code installs
-as the account with the official installer, `curl -fsSL https://claude.ai/install.sh | bash -s stable`,
+as the account with the official installer, `curl -fsSL https://claude.ai/install.sh | bash -s latest`,
 which places the launcher at `~/.local/bin/claude` and versions under
 `~/.local/share/claude/`. The installer refuses only root-with-`SUDO_USER`
 invocations; the helper runs it as the target UID, so it proceeds. Auto-update
@@ -417,13 +429,14 @@ the native-user installer flow, and every authenticated behaviour.
 
 ## Open questions
 
-* Does the guest's `claude sandbox status` report `policyLocked: true` for a
-  managed file, and is `enabledSource` `"policy"` there as for `--settings`?
-  Pin whatever the first VM run shows.
-* Does Claude Code's bubblewrap invocation work under Ubuntu 26.04's packaged
-  AppArmor profile without the documented `bwrap` profile, and inside Incus
-  containers without `enableWeakerNestedSandbox`?
+* Resolved: with the managed file, the guest's `claude sandbox status`
+  (2.1.263) reports `enabledSource: "policy"` and `strictModeSource: "policy"`
+  as `--settings` does on the host; `policyLocked` stays `false` because it
+  describes the Windows sandbox install, so the verifier ignores it.
+* Resolved for VMs: Ubuntu 26.04's packaged profile blocks Claude Code's
+  seccomp step, so the recipe installs the documented `bwrap` profile (see
+  Provisioning). Incus containers remain untested.
 * Where does the desktop app install its remote runtime, and does that copy
   honour `DISABLE_UPDATES`?
-* `stable` versus `latest` apt channel: `stable` is proposed; switch if a
-  needed fix lands only in `latest`.
+* `stable` versus `latest` apt channel: resolved in favour of `latest` after
+  the first guest run (see Installation).

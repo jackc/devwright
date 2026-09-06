@@ -126,6 +126,31 @@ codex_version=$(/usr/local/bin/codex --version)
 printf '%s\n' "$codex_version"
 sudo -u dev -H /usr/local/bin/codex --version
 
+# Ubuntu's stock bubblewrap profile confines the commands bubblewrap runs to a
+# child profile that denies capabilities, which blocks the nested user namespace
+# Claude Code's seccomp filter creates. Disable it through the standard disable
+# directory and install Anthropic's documented profile: bubblewrap itself may
+# create user namespaces, and the commands it runs stay confined by bubblewrap's
+# namespaces and the agents' own sandboxes. The global unprivileged user
+# namespace restriction remains enabled.
+mkdir -p /etc/apparmor.d/disable
+if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then
+  ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/bwrap-userns-restrict
+  apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict 2>/dev/null || true
+fi
+cat > /etc/apparmor.d/bwrap <<'PROFILE'
+abi <abi/5.0>,
+include <tunables/global>
+
+# Installed by dev-sandbox from Anthropic's Claude Code sandboxing guidance.
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/bwrap>
+}
+PROFILE
+apparmor_parser -r /etc/apparmor.d/bwrap
+
 # Anthropic's signed apt repository provides a root-owned /usr/bin/claude.
 # Trust the release key only after checking its fingerprint.
 install -d -m 755 /etc/apt/keyrings
@@ -137,7 +162,9 @@ test "$claude_fingerprint" = 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
 install -m 644 "$claude_key" /etc/apt/keyrings/claude-code.asc
 rm -f "$claude_key"
 trap - EXIT
-printf '%s\n' 'deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main' \
+# The latest channel matches the Codex install and carries the posture report
+# and session flags the verifier uses; stable lagged a month behind them.
+printf '%s\n' 'deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/latest latest main' \
   > /etc/apt/sources.list.d/claude-code.list
 apt-get update -qq
 apt-get install -y --no-install-recommends claude-code

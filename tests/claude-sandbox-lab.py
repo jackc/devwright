@@ -182,6 +182,15 @@ def main():
     # A bare "*" in allowedDomains means direct network by design (the embedded
     # managed policy); anything else must leave example.com unreachable.
     open_network = "*" in settings["sandbox"].get("network", {}).get("allowedDomains", [])
+    # A managed policy unions its domains with the lab's; the recipe's guest
+    # policy allows every domain, so the lab expects the network open there.
+    for managed in ("/etc/claude-code/managed-settings.json", "/Library/Application Support/ClaudeCode/managed-settings.json"):
+        try:
+            with open(managed) as handle:
+                if "*" in json.load(handle).get("sandbox", {}).get("network", {}).get("allowedDomains", []):
+                    open_network = True
+        except (OSError, ValueError):
+            pass
 
     command = "CANARY='%s' SIBLING='%s' sh '%s'" % (canary, sibling, probe)
     results = []
@@ -199,7 +208,7 @@ def main():
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     })
     argv = ["claude", "-p", "--bare", "--model", "stub-model", "--settings", settings_path,
-            "--allowedTools", "Bash", "--permission-prompts", "none", "--max-turns", "3",
+            "--allowedTools", "Bash", "--max-turns", "3",
             "--output-format", "json", "Run the sandbox lab probe."]
     try:
         completed = subprocess.run(argv, cwd=workspace, env=env, stdin=subprocess.DEVNULL,
@@ -242,6 +251,9 @@ def main():
         unchanged = handle.read() == "original"
     print("%s outside-workspace file unchanged" % ("PASS" if unchanged else "FAIL"))
     failed |= not unchanged
+    if failed and results:
+        print("--- tool result as relayed by the stub ---")
+        print("\n".join(results).strip())
     if args.keep or failed:
         print("Fixture retained: %s" % fixture)
     else:

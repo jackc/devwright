@@ -26,7 +26,10 @@ var minimumClaudeVersion = [3]int{2, 1, 219}
 
 const claudeManagedDir = "/etc/claude-code"
 
+// Releases before the second status format print only install fields on
+// Linux; the posture comparison needs statusVersion 2.
 type sandboxStatus struct {
+	StatusVersion    int    `json:"statusVersion"`
 	Enabled          bool   `json:"enabled"`
 	EnabledSource    string `json:"enabledSource"`
 	StrictMode       bool   `json:"strictMode"`
@@ -167,10 +170,15 @@ func checkClaude(home string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := checkClaudePosture(selected, status); err != nil {
-		return err
+	if status.StatusVersion >= 2 {
+		if err := checkClaudePosture(selected, status); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, drop-in absence, and reported sandbox posture")
+	} else {
+		fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, and drop-in absence")
+		fmt.Fprintln(out, "NOT TESTED: reported sandbox posture; this Claude Code release prints no posture fields on Linux")
 	}
-	fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, drop-in absence, and reported sandbox posture")
 	bundled, err := os.ReadFile("/usr/local/share/dev-sandbox/default-managed-settings.json")
 	if err != nil {
 		return err
@@ -332,8 +340,9 @@ func runClaudeSession(ctx context.Context, claude, dir, configDir, command strin
 		return claudeRun{}, err
 	}
 	defer stub.close()
+	// --allowedTools pre-approves Bash, so nothing prompts in print mode.
 	args := append([]string{claude, "-p", "--bare", "--model", "stub-model", "--allowedTools", "Bash",
-		"--permission-prompts", "none", "--max-turns", "3", "--output-format", "json"}, extra...)
+		"--max-turns", "3", "--output-format", "json"}, extra...)
 	args = append(args, "Run the acceptance probe.")
 	stdout, stderr, err := runWith(ctx, dir, claudeEnvironment(stub.url(), configDir), args...)
 	if err != nil {

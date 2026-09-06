@@ -22,7 +22,7 @@ Creation downloads an Ubuntu image and installs packages. Provisioning
 installs the latest stable Codex release with the official standalone installer,
 without requiring Node.js or npm. The root-owned package lives under
 `/usr/local/share/codex`, with its command at `/usr/local/bin/codex`. Claude Code
-comes from Anthropic's signed apt repository on its `stable` channel, as the
+comes from Anthropic's signed apt repository on its `latest` channel, as the
 root-owned `/usr/bin/claude`; the release key is accepted only after its
 fingerprint matches the documented value. See
 [CLAUDE-CODE-DESIGN.md](CLAUDE-CODE-DESIGN.md) for the design behind the Claude
@@ -253,7 +253,7 @@ Codex policy remains untouched. `--codex-config` and `--replace-codex-config` wo
 `--codex-requirements`, `--reset-codex-requirements`, and VM resource flags are
 rejected for this backend before provisioning.
 
-Claude Code installs the same way, with the official installer on its `stable`
+Claude Code installs the same way, with the official installer on its `latest`
 channel and its command at `~/.local/bin/claude`. The editable defaults in
 `~/.claude/settings.json` turn the Bash sandbox on in strict mode, deny the same
 secret paths to sandboxed commands and the file tools, and turn off connectors,
@@ -616,7 +616,8 @@ Claude Code reports rather than trusting the file.
 Verification checks that `claude` resolves to the root-owned package, the
 policy checksum, the absence of `managed-settings.d` drop-ins and
 `managed-mcp.json`, and that `claude sandbox status` reports the sandbox on,
-strict, and set by policy. For the embedded policy it then drives one
+strict, and set by policy, when the installed release prints that report. For
+the embedded policy it then drives one
 non-interactive session through a loopback stub of the Messages API: the stub
 asks Claude Code to run the verifier's probe through the Bash tool, so the real
 sandbox applies without a model or sign-in. The probe checks a workspace write,
@@ -692,18 +693,24 @@ Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user.
   and disables apps, plugins, browser/computer use and configured MCP servers.
   The embedded managed Claude Code policy does the same for Claude Code's Bash
   sandbox and file tools. Only Bash is sandboxed there: WebFetch and WebSearch
-  run in Claude Code's own process, and Unix sockets are not blocked on Linux
-  without the optional seccomp filter, which the recipe does not install. The
-  guest exposes no agent, Docker, or Incus socket to `dev`, and the verifier
-  keeps checking that.
+  run in Claude Code's own process. Claude Code's bundled seccomp filter blocks
+  Unix sockets inside the sandbox once the AppArmor profile above is in place;
+  the guest exposes no agent, Docker, or Incus socket to `dev` either way, and
+  the verifier keeps checking that.
 * The Claude desktop app's SSH sessions install their own Claude Code runtime
   and deliver claude.ai connectors in-process, where `disableClaudeAiConnectors`
   and the MCP allowlist do not reach them. The managed file still binds that
   runtime's sandbox and permission controls. Inspect a fresh session's tool
   inventory before relying on that separation.
-* Ubuntu 26.04 supplies the bubblewrap AppArmor profile. No custom profile is
-  installed; Ubuntu's global user-namespace restriction stays enabled, and Codex
-  applies its own filesystem sandbox. Older Ubuntu releases are not supported.
+* Ubuntu's global unprivileged user-namespace restriction stays enabled. The
+  recipe disables Ubuntu's stock `bwrap-userns-restrict` profile through
+  `/etc/apparmor.d/disable/` and installs the profile Anthropic documents for
+  Claude Code, which lets `bwrap` itself create user namespaces. Ubuntu's stock
+  profile confined every command bubblewrap runs to a child profile that denies
+  capabilities, and that blocked the nested user namespace Claude Code's seccomp
+  filter creates; commands now rely on bubblewrap's namespaces and each agent's
+  own sandbox rather than on that child profile. Older Ubuntu releases are not
+  supported.
 * Managed policy and installed tools are root-owned; development credentials and
   startup hooks are dev-owned. root SSH permits public-key authentication only;
   do not expose an admin SSH connection or rootful Docker socket to agents.

@@ -74,7 +74,7 @@ trap - EXIT
 claude_installer=$(mktemp "$HOME/.local/claude-install.XXXXXX")
 trap 'rm -f "$claude_installer"' EXIT
 curl -fsSL https://claude.ai/install.sh -o "$claude_installer"
-bash "$claude_installer" stable
+bash "$claude_installer" latest
 rm -f "$claude_installer"
 trap - EXIT
 "$HOME/.local/bin/claude" --version

@@ -53,9 +53,16 @@ func TestClaudePosture(t *testing.T) {
 		{"relaxed filesystem", strings.Replace(good, `"filesystemPolicy":"strict"`, `"filesystemPolicy":"relaxed"`, 1), embedded, false},
 		{"custom relaxed policy", strings.Replace(good, `"enabled":true`, `"enabled":false`, 1), relaxed, true},
 		{"not json", "sandbox: on", embedded, false},
+		{"legacy status", `{"available":false,"installed":false,"policyLocked":false,"reasons":["x"]}`, embedded, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			status, err := parseSandboxStatus(tc.output)
+			if err == nil && tc.name == "legacy status" {
+				if status.StatusVersion >= 2 {
+					t.Fatal("legacy status treated as a posture report")
+				}
+				return
+			}
 			if err == nil {
 				err = checkClaudePosture(tc.policy, status)
 			}

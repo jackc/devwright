@@ -31,11 +31,48 @@ denies `~/.claude/.credentials.json`. Design and rationale are in
   contains only `/usr/bin/claude` and a copyright file, and the release key's
   fingerprint matched the documented value.
 
-Not yet run: fresh guest provisioning with the apt install, `claude sandbox status`
-against a managed file on Linux, the bubblewrap AppArmor interaction with Claude
-Code's sandbox on Ubuntu 26.04 and inside Incus containers, the native-user
-installer flow, and every authenticated behavior. Existing VMs need `configure`
-with the rebuilt CLI before `verify` can check Claude Code.
+Guest acceptance ran the same day in disposable Ubuntu 26.04 arm64 Lima/VZ VMs
+(2 CPUs, 2 GiB, 20 GiB), created from this checkout's build and deleted
+afterwards. Existing VMs were not touched.
+
+- The first `create` installed Codex 0.153.4 and Claude Code 2.1.236 from the
+  apt `stable` channel, passed all four Codex checks, and failed the Claude
+  posture check: that release's `claude sandbox status` prints only the legacy
+  Windows-install fields on Linux, and its `claude -p` rejects
+  `--permission-prompts`. The recipe now follows the `latest` channel, which
+  served 2.1.263 with the posture report, and the verifier tolerates a release
+  without one and drops the redundant flag (`--allowedTools Bash` already
+  prevents prompts).
+- After `configure` switched the guest to 2.1.263, the posture check passed and
+  the sandbox probe failed inside the guest: every sandboxed command ended with
+  `apply-seccomp: write /proc/self/setgroups (nested userns is
+  capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`.
+  Ubuntu's stock `bwrap-userns-restrict` profile confines the commands
+  bubblewrap runs to a child profile that denies capabilities, which blocks the
+  nested user namespace Claude Code's bundled seccomp filter creates. Installing
+  Anthropic's documented `bwrap` profile by hand (ABI 5.0 on 26.04) and disabling
+  the stock profile through `/etc/apparmor.d/disable/` made the lab pass in the
+  guest, so the recipe now does both during provisioning. The global
+  unprivileged user-namespace restriction stays enabled.
+- With the final recipe, `configure` passed every check: the four Codex checks
+  unchanged, Claude Code 2.1.263 installed as root-owned `/usr/bin/claude`,
+  managed policy ownership, checksum, drop-in absence, and reported posture
+  (sandbox on, strict, both set by policy), the stub-driven probe (workspace
+  write allowed, outside-workspace write denied, synthetic `~/.pgpass` read
+  denied), and the same probe with a lower-scope `allowRead` override that the
+  managed lock ignored. A fresh `create` with the final recipe then passed the
+  same checks end to end, and a separate `verify` passed again. In that guest
+  `claude sandbox status` reported `enabled: true`, `enabledSource: "policy"`,
+  `strictMode: true`, `strictModeSource: "policy"`, `filesystemPolicy: "strict"`
+  and `policyLocked: false`; the last field describes the Windows sandbox
+  install and says nothing about managed settings. Both VMs were deleted.
+- Lima's generated SSH configuration multiplexes on one control socket, so a
+  manual `ssh -l root` reuses an open `dev` session; the CLI's per-user control
+  path avoids this, and manual root access needs `-o ControlPath=none`.
+
+Not yet run: Incus containers with Claude Code, the native-user installer flow,
+and every authenticated behavior. Existing VMs need `configure` with the rebuilt
+CLI before `verify` can check Claude Code.
 
 ## Native restricted accounts using system SSH
 
