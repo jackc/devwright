@@ -1,5 +1,31 @@
 # Lima/Codex validation
 
+## Optional dotfiles provisioning
+
+Tested September 5, 2026 on fresh Ubuntu 26.04 VM `agent-dotfiles-test`,
+with Codex 0.153.4. A credential-free fixture Git repository was transferred
+into the guest during test bootstrap, then selected with `--dotfiles-repo`
+using a guest-local `file://` URL and `--dotfiles-install 'setup fixture.sh'`.
+No personal dotfiles repository or credentials were used.
+
+Creation installed the fixture independently for root and dev. Checks confirmed
+correct HOME, USER, LOGNAME, working directory, checkout ownership, and GitHub
+HTTPS helper configuration. Both accounts resolved the VM-managed Codex and gh;
+dev still lacked sudo and could not read root's installed files.
+
+Configuration without dotfiles options left the fixture run counts unchanged.
+After committing a fixture update, configuration through the CLI fetched it
+with a fast-forward and reran both installers, producing the new version and
+exactly two runs per account. Full guest account and Codex sandbox acceptance
+checks passed on creation and both configuration runs. A test-harness ownership
+issue on the transferred source repository was corrected before committing the
+fixture update; no product changes were needed. The temporary VM was removed.
+Existing VMs were not modified.
+
+Local validation: 23 tests and 115 assertions passed, along with Bash syntax,
+Lima template validation, and `git diff --check`. Arbitrary third-party installers
+and private repository authentication remain dependent on their own setup.
+
 ## Primary dev account and root administration
 
 Tested September 5, 2026 on fresh Ubuntu 26.04 VM `agent-root-test` with Codex

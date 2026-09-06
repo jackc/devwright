@@ -27,6 +27,55 @@ class DevelopmentVMTest < Minitest::Test
     end
   end
 
+  def test_dotfiles_options_are_optional_and_shell_escaped
+    refute_includes @vm.provision, 'jackc'
+    configured = DevelopmentVM.new(dotfiles_repo: "https://example.com/a'$(false).git", dotfiles_install: 'setup script')
+    assignments = configured.provision.lines.first(2).join
+    output, error, status = Open3.capture3('/bin/bash', '-c', assignments + 'printf "%s\\n" "$dotfiles_repository" "$dotfiles_install"')
+    assert status.success?, error
+    assert_equal ["https://example.com/a'$(false).git", 'setup script'], output.lines.map(&:chomp)
+    assert_raises(RuntimeError) { configured.execute('verify', 'test') }
+    assert_raises(RuntimeError) { DevelopmentVM.new(dotfiles_install: '../install') }
+  end
+
+  def test_dotfiles_installer_runs_in_independent_checkouts_and_can_repeat
+    script = File.read(File.join(DevelopmentVM::ROOT, 'lima/dotfiles.sh'))
+    user_setup = script.split("<<'USER_SETUP'\n", 2).last.split("\nUSER_SETUP", 2).first
+    Dir.mktmpdir do |directory|
+      source = File.join(directory, 'source')
+      FileUtils.mkdir_p(source)
+      installer = File.join(source, 'custom setup')
+      File.write(installer, <<~'INSTALL')
+        #!/bin/bash
+        set -eu
+        test -f './custom setup'
+        printf '%s\n' "$HOME" >> "$HOME/installed"
+        git config --global credential.helper 'cache --timeout=7200'
+      INSTALL
+      File.chmod(0o755, installer)
+      @vm.run(['git', 'init', '-q', source], capture: true)
+      @vm.run(['git', '-C', source, 'add', '.'], capture: true)
+      @vm.run(['git', '-C', source, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+               '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture'], capture: true)
+      %w[root dev].each do |account|
+        home = File.join(directory, account)
+        FileUtils.mkdir_p(home)
+        env = { 'HOME' => home, 'PATH' => ENV.fetch('PATH'), 'GIT_CONFIG_NOSYSTEM' => '1' }
+        2.times do
+          output, error, status = Open3.capture3(env, '/bin/bash', '-s', '--', source, 'custom setup',
+                                                stdin_data: user_setup, unsetenv_others: true)
+          assert status.success?, output + error
+        end
+        assert_equal [home, home], File.readlines(File.join(home, 'installed'), chomp: true)
+        refute File.exist?(File.join(home, '.zshenv'))
+        output, error, status = Open3.capture3(env, 'git', 'config', '--global', '--get-all',
+                                              'credential.https://github.com.helper', unsetenv_others: true)
+        assert status.success?, error
+        assert_equal "\n!/usr/local/bin/gh auth git-credential\n", output
+      end
+    end
+  end
+
   def test_environment_removal_is_effective_in_child
     old = ENV['GH_TOKEN']
     ENV['GH_TOKEN'] = 'synthetic-token'

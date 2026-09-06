@@ -18,13 +18,22 @@ class DevelopmentVM
   PAYLOADS = {
     'REQUIREMENTS' => 'config/codex/requirements.toml',
     'CONFIG' => 'config/codex/config.toml',
+    'DOTFILES' => 'lima/dotfiles.sh',
     'VERIFY' => 'scripts/verify_guest.rb',
     'CHECK_CODEX' => 'scripts/check_codex.rb'
   }.freeze
 
-  def initialize(root: ROOT, home: Dir.home)
+  def initialize(root: ROOT, home: Dir.home, dotfiles_repo: nil, dotfiles_install: 'install')
     @root = root
     @home = home
+    @dotfiles_repo = dotfiles_repo
+    @dotfiles_install = dotfiles_install
+    if dotfiles_repo && (dotfiles_repo.empty? || dotfiles_repo.start_with?('-'))
+      raise 'Expected a dotfiles Git repository URL'
+    end
+    if dotfiles_install.empty? || dotfiles_install.start_with?('/') || dotfiles_install.split('/').include?('..')
+      raise 'Dotfiles installer must be a relative path within the repository'
+    end
   end
 
   def environment
@@ -52,7 +61,8 @@ class DevelopmentVM
     PAYLOADS.each do |key, path|
       script = script.gsub("__#{key}_B64__", Base64.strict_encode64(File.binread(File.join(@root, path))))
     end
-    script
+    "dotfiles_repository=#{Shellwords.escape(@dotfiles_repo || '')}\n" \
+      "dotfiles_install=#{Shellwords.escape(@dotfiles_install)}\n" + script
   end
 
   def render
@@ -151,6 +161,9 @@ class DevelopmentVM
 
   def execute(action, name = 'agent-dev')
     raise "Unknown action: #{action}" unless ACTIONS.include?(action)
+    if @dotfiles_repo && !%w[create configure].include?(action)
+      raise 'Dotfiles options apply only to create and configure'
+    end
     unless /\A[a-z][a-z0-9-]{0,39}\z/.match?(name)
       raise 'VM name must start with a letter and contain only lowercase letters, digits, and hyphens'
     end
@@ -201,15 +214,20 @@ class DevelopmentVM
 end
 
 if $PROGRAM_NAME == __FILE__
+  dotfiles_options = {}
   parser = OptionParser.new do |options|
     options.banner = "Usage: #{$PROGRAM_NAME} ACTION [NAME]\nActions: #{DevelopmentVM::ACTIONS.join(', ')}\nDefault VM: agent-dev"
+    options.on('--dotfiles-repo URL', 'Install this Git repository for root and dev') { |url| dotfiles_options[:dotfiles_repo] = url }
+    options.on('--dotfiles-install PATH', 'Executable installer relative to repository (default: install)') { |path| dotfiles_options[:dotfiles_install] = path }
     options.on('-h', '--help', 'Show this help') { puts options; exit }
   end
   begin
     parser.parse!
     raise parser.to_s unless (1..2).cover?(ARGV.length)
 
-    DevelopmentVM.new.execute(*ARGV)
+    raise '--dotfiles-install requires --dotfiles-repo' if dotfiles_options.key?(:dotfiles_install) && !dotfiles_options.key?(:dotfiles_repo)
+
+    DevelopmentVM.new(**dotfiles_options).execute(*ARGV)
   rescue StandardError => e
     warn e.message
     exit 1

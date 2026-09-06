@@ -79,6 +79,12 @@ git config --system --add credential.https://github.com.helper '!/usr/local/bin/
 git config --system init.defaultBranch main
 sudo -u dev -H /usr/local/bin/gh config set git_protocol https --host github.com
 
+printf '%s' '__DOTFILES_B64__' | base64 -d > /usr/local/share/agent-vm/dotfiles.sh
+chmod 755 /usr/local/share/agent-vm/dotfiles.sh
+if [ -n "$dotfiles_repository" ]; then
+  /bin/bash /usr/local/share/agent-vm/dotfiles.sh "$dotfiles_repository" "$dotfiles_install"
+fi
+
 printf '%s' '__VERIFY_B64__' | base64 -d > /usr/local/share/agent-vm/verify.rb
 chmod 755 /usr/local/share/agent-vm/verify.rb
 printf '%s' '__CHECK_CODEX_B64__' | base64 -d > /usr/local/share/agent-vm/check_codex.rb

@@ -90,8 +90,8 @@ codex login --device-auth
 
 Complete Codex sign-in in your browser. If device authentication is unavailable
 for your account, use the authentication flow supported by your Codex client.
-Set your Git author name/email as `dev` when needed; provisioning deliberately
-does not copy your host Git configuration.
+Set your Git author name/email as `dev` when needed, or use the optional
+dotfiles installer below. Provisioning does not copy host Git configuration.
 
 For the desktop, add **lima-agent-dev** as an SSH host in its remote connection
 settings, then select a guest directory under `/home/dev/projects`. Use the
@@ -106,6 +106,7 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | `lima/agent.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
 | `lima/bootstrap.sh` | Creation-only setup of key-based root SSH |
 | `lima/provision.sh` | Repeatable OS, account, SSH, GitHub helper, and Codex installation |
+| `lima/dotfiles.sh` | Optional per-account dotfiles installation for root and dev |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
 | `scripts/verify_guest.rb` | Credential-free Linux and sandbox acceptance checks |
@@ -135,6 +136,39 @@ starts the VM first. It installs the latest Codex, updates managed policy and
 system settings, and runs the guest acceptance checks. It preserves `dev`'s
 personal Codex config, credentials, and projects. Use it while development tools
 are idle because it updates installed software and reloads SSH configuration.
+
+### Optional dotfiles
+
+Pass your own Git repository when creating or configuring a VM:
+
+```sh
+ruby scripts/vm.rb create my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git
+ruby scripts/vm.rb configure my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git --dotfiles-install setup.sh
+```
+
+No dotfiles are installed by default. The default installer is `install`; use
+`--dotfiles-install` for another executable path relative to the repository.
+The installer must have a shebang and run without interaction. It runs with the
+repository as its working directory and the target account's HOME, USER, LOGNAME,
+and SHELL. It is responsible for its dependencies, backups, startup files, and
+any shell preferences; the recipe does not assume Mise or Zsh.
+
+Both `root` and `dev` get independent checkouts at
+`~/.local/share/agent-vm/dotfiles`. The installer runs as each account, so it must
+support `dev` without sudo. Only supply repositories you trust to run as root.
+The repository must be accessible from both guest accounts; host credentials
+and SSH agents are not forwarded. Public HTTPS repositories work without setup.
+GitHub HTTPS is configured to use the VM token helper after installation.
+Keep `/usr/local/bin` ahead of alternative Codex and `gh` installations in your
+installer's PATH settings.
+
+Repeat the options on `configure` to update and rerun the installer. Updates use
+`git pull --ff-only`; local conflicts stop setup. A different repository URL is
+rejected for an existing checkout; move that checkout aside in each account
+before switching repositories. Omitting the options leaves installed dotfiles
+alone and does not update or remove them.
+
+### Configuration behavior
 
 Explicit provisioning restores policy, SSH settings, and `dev`'s empty
 supplementary group list. Manual changes to those settings survive normal
@@ -185,8 +219,9 @@ with earlier recipes, including boot provisioning, is not supported.
   allowed and one **disallowed private repository**; public repositories are not
   a valid negative test. No network allowlist or Claude setup is included.
 
-Local checks: `ruby tests/test_vm.rb`, `ruby tests/test_verification.rb`, and
-`bash -n lima/provision.sh`. `create` also validates the generated Lima YAML.
+Local checks: `ruby tests/test_vm.rb`, `ruby tests/test_verification.rb`,
+`bash -n lima/provision.sh`, and `bash -n lima/dotfiles.sh`.
+`create` also validates the generated Lima YAML.
 See [VALIDATION.md](VALIDATION.md) for the actual VM test results and research provenance.
 
 ## Original project goals
