@@ -1,5 +1,5 @@
 #!/bin/bash
-# Embedded in agent-vm and sent over admin SSH during create/configure only.
+# Shared by Lima and Incus; sent over admin SSH during create/configure only.
 set -euo pipefail
 umask 022
 export DEBIAN_FRONTEND=noninteractive

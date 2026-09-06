@@ -19,6 +19,10 @@ Actions: render, create, configure, verify, ssh-config, install-ssh, set-token
 Default VM: agent-dev
 
 Options (may appear before or after the action):
+  --backend lima|incus    Instance manager (default: lima)
+  --container             Create an Incus system container instead of a VM (create/render)
+  --network NAME          Incus managed network (default: incusbr0; create/render)
+  --storage NAME          Incus storage pool (default: default; create/render)
   --dotfiles-repo URL      Install this Git repository for root and dev (create/configure)
   --dotfiles-install PATH  Installer relative to the repository (default: install)
   --cpus N                CPUs for a new VM (default: 4; create/render only)
@@ -27,12 +31,15 @@ Options (may appear before or after the action):
   --version               Print the CLI/embedded recipe version
   -h, --help              Show this help
 
-Use limactl start/stop/delete for VM lifecycle and ssh lima-NAME for development.
+Use limactl or incus start/stop/delete for lifecycle; ssh lima-NAME or incus-NAME for development.
+Incus uses the local server's default project. Repeat --backend incus on every action.
 `
 
 type options struct {
 	action, name, dotfilesRepo, dotfilesInstall, memory, disk string
 	cpus                                                      int
+	backend, network, storage                                 string
+	container                                                 bool
 	help, version                                             bool
 	set                                                       map[string]bool
 }
@@ -47,6 +54,10 @@ func parseOptions(args []string) (options, error) {
 	f.BoolVar(&o.help, "help", false, "")
 	f.BoolVar(&o.help, "h", false, "")
 	f.BoolVar(&o.version, "version", false, "")
+	f.StringVar(&o.backend, "backend", "lima", "")
+	f.BoolVar(&o.container, "container", false, "")
+	f.StringVar(&o.network, "network", "incusbr0", "")
+	f.StringVar(&o.storage, "storage", "default", "")
 	f.StringVar(&o.dotfilesRepo, "dotfiles-repo", "", "")
 	f.StringVar(&o.dotfilesInstall, "dotfiles-install", "install", "")
 	f.IntVar(&o.cpus, "cpus", 0, "")
@@ -97,6 +108,17 @@ func parseOptions(args []string) (options, error) {
 	if !validName.MatchString(o.name) {
 		return o, errors.New("VM name must start with a letter and contain only lowercase letters, digits, and hyphens (maximum 40 characters)")
 	}
+	if o.backend != "lima" && o.backend != "incus" {
+		return o, errors.New("--backend must be lima or incus")
+	}
+	for _, key := range []string{"container", "network", "storage"} {
+		if o.set[key] && (o.backend != "incus" || (o.action != "create" && o.action != "render")) {
+			return o, fmt.Errorf("--%s applies only to Incus create and render", key)
+		}
+	}
+	if !validIncusResource.MatchString(o.network) || !validIncusResource.MatchString(o.storage) {
+		return o, errors.New("expected a simple Incus network or storage pool name")
+	}
 	if o.set["dotfiles-install"] && !o.set["dotfiles-repo"] {
 		return o, errors.New("--dotfiles-install requires --dotfiles-repo")
 	}
@@ -118,7 +140,7 @@ func parseOptions(args []string) (options, error) {
 	}
 	for _, key := range []string{"cpus", "memory", "disk"} {
 		if o.set[key] && o.action != "create" && o.action != "render" {
-			return o, errors.New("resource options apply only to create and render; edit existing VM resources with Lima")
+			return o, errors.New("resource options apply only to create and render; edit existing resources with the instance manager")
 		}
 	}
 	if o.set["cpus"] && o.cpus < 1 {
@@ -150,10 +172,15 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 	if err != nil {
 		return err
 	}
-	v := vm{options: o, home: home, out: stdout, run: commandRunner(ctx, stdin, stdout, stderr),
-		readToken: func() (string, error) { return readToken(ctx) }}
+	v := vm{options: o, ctx: ctx, home: home, out: stdout, run: commandRunner(ctx, stdin, stdout, stderr),
+		withContext: func(ctx context.Context) runner { return commandRunner(ctx, stdin, stdout, stderr) },
+		readToken:   func() (string, error) { return readToken(ctx) }}
 	if o.action != "render" {
-		if err := preflight(v.run, exec.LookPath, runtime.GOOS); err != nil {
+		check := preflight
+		if o.backend == "incus" {
+			check = incusPreflight
+		}
+		if err := check(v.run, exec.LookPath, runtime.GOOS); err != nil {
 			return err
 		}
 	}

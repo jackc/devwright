@@ -1,4 +1,103 @@
-# Lima/Codex validation
+# Lima, Incus, and Codex validation
+
+## Incus backend: Linux host and unprivileged containers
+
+Tested September 5, 2026 on an Apple M3 Max running macOS, with Lima 2.2.0/VZ.
+A disposable `agent-incus-test` Lima VM ran Ubuntu 26.04 arm64, kernel
+7.0.0-28-generic, 6 vCPUs, and 8 GiB memory, with nested virtualization enabled
+and no host filesystem mounts. Ubuntu's Incus 6.0.5 and QEMU 10.2.1 packages
+were installed there. Tests ran the Linux executable as the host's ordinary
+`jack` account with membership in `incus-admin`, without Lima installed inside
+the Linux host.
+
+Incus used a 70 GiB loop-backed Btrfs pool and a private NAT bridge. Automatic
+bridge subnet discovery failed inside Lima, so test setup explicitly selected
+10.203.79.1/24 with IPv6 disabled. This was test-host initialization, not a
+change to `agent-vm`'s recipe or to existing development VMs.
+
+Created `nested-container` with 2 CPUs, 2 GiB memory, and a 12 GiB disk limit;
+then created `final-container` using the default 4 CPUs, 4 GiB memory, and
+60 GiB disk limit. Both used `images:ubuntu/26.04`, no profiles, unprivileged
+isolated UID/GID mappings, and nested namespaces. Both completed creation,
+SSH bootstrap, installation of Codex 0.153.4, and the full guest acceptance
+suite. No AppArmor restrictions were disabled or custom profiles installed.
+
+The tested commands include:
+
+```sh
+agent-vm create nested-container --backend incus --container \
+  --cpus 2 --memory 2GiB --disk 12GiB
+agent-vm create final-container --backend incus --container
+agent-vm install-ssh nested-container --backend incus
+agent-vm verify nested-container --backend incus
+agent-vm set-token nested-container --backend incus
+incus --force-local --project default stop nested-container
+agent-vm configure nested-container --backend incus
+```
+
+Acceptance confirmed:
+
+- Real SSH sessions select `dev` and `root` correctly. `dev` has no sudo,
+  supplementary groups, access to root's home, or forwarded host SSH agent.
+- The actual Codex sandbox permits workspace writes and denies writes outside
+  it and reads of the synthetic protected file. Conflicting permission-profile
+  overrides are rejected, and managed apps/plugins settings hold.
+- Repeated `install-ssh` preserves the host SSH config. The generated entry
+  still works after container stop/start without refreshing addresses or ports.
+- The real terminal prompt accepts a synthetic token without echoing it; the
+  token arrives through SSH stdin and is stored with mode 0600. The synthetic
+  token was removed afterward; no actual GitHub credentials were used.
+- Stop/start preserves dev project files, personal Codex configuration, and a
+  deliberate policy-drift canary. `verify` detects that policy drift.
+- `configure` starts the stopped container, restores the managed policy, and
+  passes all acceptance checks while preserving projects, personal config,
+  token contents, the host SSH identity/pinned host key, and root's authorized
+  keys.
+
+Live testing exposed a boot race: Incus reports running processes before
+systemd's control socket and SSH are ready. The launcher now waits for guest
+process reporting, systemd's socket, and completion of the boot transaction
+before using SSH. The wait is bounded and cancelable. The stopped-container
+configuration and fresh default-resource creation passed after this fix.
+
+`make check` and `go test -race ./...` passed natively on macOS arm64 (Go 1.26.5)
+and Linux arm64 (Go 1.26.0). The five Ruby verifier tests and three real PTY
+tests passed on both. Incus regressions cover offline rendering, dependency
+selection, API project scoping, VM/container creation, rejection of inherited
+profiles and unsafe resolved settings/devices, bootstrap and failure ordering,
+startup readiness/cancellation, SSH identity separation, and token transport.
+Four OS/architecture release archives cross-built; the generated Homebrew
+formula parses and requires Lima only on macOS. The final Linux ARM archive
+also ran outside the checkout and passed `verify final-container --backend incus`.
+These are local test artifacts, not published releases.
+
+### Nested hardware VM attempt
+
+The outer Lima VM exposed `/dev/kvm`. Incus created `nested-vm` as an arm64
+hardware VM from the Ubuntu 26.04 default image, with KVM acceleration and
+`-cpu host`. Its console remained at the UEFI/bootloader handoff, with no Linux
+boot output, DHCP lease, or working Incus agent. Creation reached its guest
+readiness timeout. Retrying with one vCPU, and a separate temporary diagnostic
+boot with Secure Boot disabled, produced the same result. The Secure Boot
+override was removed afterward; the product recipe retains the default.
+
+This environment therefore did **not** complete nested Incus VM acceptance.
+The VM code path has host regression coverage, but end-to-end guest validation
+here uses the explicitly supported container mode. KVM device availability
+alone is not sufficient evidence of a working nested guest stack. No host
+AppArmor or firmware workaround was added to make that claim.
+
+Both containers, the incomplete nested VM, and their disposable Linux host
+were removed after testing.
+Existing `agent-dev`, `default-dev-vm`, and `pgx-dev-vm` instances and the macOS
+SSH configuration were not modified. Authenticated model tasks, private GitHub
+repository scope, and desktop-provided tool inventory remain untested.
+
+References used for the backend:
+[Incus creation](https://linuxcontainers.org/incus/docs/main/howto/instances_create/),
+[Incus guest execution](https://linuxcontainers.org/incus/docs/main/instance-exec/),
+[instance options](https://linuxcontainers.org/incus/docs/main/reference/instance_options/),
+and [Lima nested virtualization configuration](https://github.com/lima-vm/lima/blob/v2.2.0/templates/default.yaml).
 
 ## Go host CLI and distribution
 

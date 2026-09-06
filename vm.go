@@ -1,6 +1,7 @@
 package agentvm
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -25,21 +26,27 @@ type instanceConfig struct {
 }
 
 type instance struct {
-	Name   string         `json:"name"`
-	Dir    string         `json:"dir"`
-	Status string         `json:"status"`
-	Config instanceConfig `json:"config"`
+	Backend string         `json:"-"`
+	Name    string         `json:"name"`
+	Dir     string         `json:"dir"`
+	Status  string         `json:"status"`
+	Config  instanceConfig `json:"config"`
 }
 
 type vm struct {
 	options
-	home      string
-	out       io.Writer
-	run       runner
-	readToken func() (string, error)
+	home        string
+	ctx         context.Context
+	out         io.Writer
+	run         runner
+	withContext func(context.Context) runner
+	readToken   func() (string, error)
 }
 
 func (v *vm) render() ([]byte, error) {
+	if v.backend == "incus" {
+		return v.renderIncus()
+	}
 	data, err := recipe.ReadFile("lima/agent.json")
 	if err != nil {
 		return nil, err
@@ -82,6 +89,9 @@ func (v *vm) provision() (string, error) {
 }
 
 func (v *vm) info() (instance, error) {
+	if v.backend == "incus" {
+		return v.incusInfo()
+	}
 	output, err := v.run([]string{"limactl", "list", "--json", v.name}, nil, true)
 	if err != nil {
 		return instance{}, err
@@ -116,6 +126,9 @@ func checkInstance(state instance) error {
 }
 
 func sshArgs(state instance, user string) []string {
+	if state.Backend == "incus" {
+		return incusSSHArgs(state, user)
+	}
 	return []string{"ssh", "-F", filepath.Join(state.Dir, "ssh.config"),
 		"-o", "IdentityAgent=none", "-o", "ForwardAgent=no", "-o", "ControlPath=~/.ssh/control-%C",
 		"-o", "ControlMaster=auto", "-o", "ControlPersist=60", "-l", user, "lima-" + state.Name}
@@ -127,6 +140,9 @@ func (v *vm) remote(state instance, command []string, user string, input io.Read
 }
 
 func (v *vm) bootstrap(state instance) error {
+	if state.Backend == "incus" {
+		return v.bootstrapIncus(state)
+	}
 	script, err := recipe.ReadFile("lima/bootstrap.sh")
 	if err != nil {
 		return err
@@ -162,7 +178,12 @@ func (v *vm) execute() error {
 		_, err = v.out.Write(data)
 		return err
 	}
-	if v.action == "create" {
+	if v.action == "create" && v.backend == "incus" {
+		if err := v.createIncus(); err != nil {
+			return err
+		}
+	}
+	if v.action == "create" && v.backend != "incus" {
 		data, err := v.render()
 		if err != nil {
 			return err
@@ -190,7 +211,11 @@ func (v *vm) execute() error {
 		return err
 	}
 	if v.action == "create" || (v.action == "configure" && state.Status != "Running") {
-		if _, err := v.run([]string{"limactl", "start", "--tty=false", v.name}, nil, false); err != nil {
+		args := []string{"limactl", "start", "--tty=false", v.name}
+		if v.backend == "incus" {
+			args = incusArgs("start", v.name)
+		}
+		if _, err := v.run(args, nil, false); err != nil {
 			return err
 		}
 		state, err = v.info()
@@ -199,7 +224,16 @@ func (v *vm) execute() error {
 		}
 	}
 	if state.Status != "Running" {
-		return errors.New("VM is not running; start it first with limactl start " + v.name)
+		manager := "limactl"
+		if v.backend == "incus" {
+			manager = "incus --force-local --project default"
+		}
+		return fmt.Errorf("instance is not running; start it first with %s start %s", manager, v.name)
+	}
+	if v.backend == "incus" && v.action != "ssh-config" && v.action != "install-ssh" {
+		if err := v.waitIncus(); err != nil {
+			return err
+		}
 	}
 	switch v.action {
 	case "create":
@@ -214,7 +248,7 @@ func (v *vm) execute() error {
 		if err := v.configure(state); err != nil {
 			return err
 		}
-		fmt.Fprintf(v.out, "Created and verified. Set up SSH: agent-vm install-ssh %s\n", v.name)
+		fmt.Fprintf(v.out, "Created and verified. Set up SSH: agent-vm install-ssh %s --backend %s\n", v.name, v.backend)
 	case "configure":
 		return v.configure(state)
 	case "verify":

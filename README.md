@@ -1,24 +1,27 @@
 # Agent Sandbox Config
 
-## Lima development VMs
+## Development VMs and containers
 
-This branch implements a reusable **Lima + Ubuntu 26.04 + Codex** environment.
-`dev` is Lima's primary user. Humans and agents both develop as `dev`,
+This project implements a reusable **Ubuntu 26.04 + Codex** environment with
+**Lima VMs** and **Incus VMs or system containers**. Humans and agents develop as `dev`,
 without sudo, in `/home/dev/projects`. Projects in one VM share that account's
 files and credentials. Use another VM when they need separate access.
 Administration uses key-only SSH as `root`.
 
-Requirements on the host: Lima **2.2+** and OpenSSH, on macOS or Linux.
+Choose a backend: Lima **2.2+** and OpenSSH on macOS/Linux, or a local Incus
+server and OpenSSH (including `ssh-keygen`) on Linux. Lima remains the default;
+pass `--backend incus` on every Incus command. Incus requires no Lima installation.
 The `agent-vm` Go executable embeds the complete recipe and runs from any directory.
 Users of a prebuilt executable need neither Go nor Ruby on the host. Provisioning
-installs Ruby inside the guest for verification. The CLI checks Lima's version
-and OpenSSH's required options before operating on a VM.
+installs Ruby inside the guest for verification. Before operating on an instance,
+the CLI checks Lima's version or access to Incus, plus OpenSSH's required options.
 Creation downloads an Ubuntu image and installs packages. Provisioning
 installs the latest stable Codex release with the official standalone installer,
 without requiring Node.js or npm. The root-owned package lives under
 `/usr/local/share/codex`, with its command at `/usr/local/bin/codex`.
 The OS image selection comes
-from the installed Lima Ubuntu 26.04 image template. OS package versions are not pinned.
+from the installed Lima Ubuntu 26.04 image template, or `images:ubuntu/26.04`
+(the default, non-cloud variant) for Incus. OS package versions are not pinned.
 
 ### Install
 
@@ -68,6 +71,92 @@ without contacting Lima or SSH. Options can precede or follow the action/name.
 and rejects host mounts, agent forwarding, non-plain mode, or boot provisioning.
 It never falls back to running development commands on the host. Existing
 `default-dev-vm` and `pgx-dev-vm` instances are not managed or modified.
+
+### Incus on Linux
+
+Install and initialize Incus using [the Incus installation guide](https://linuxcontainers.org/incus/docs/main/installing/)
+and `incus admin init`. Your Linux host account needs administration access to
+Incus, usually through the `incus-admin` group; log in again after adding it.
+This access belongs on the host, never in the guest's `dev` account.
+The CLI always selects the **local server and default project**, independently
+of the active Incus remote or project. Remote Incus servers and other projects
+are not supported by this backend yet.
+
+Create a managed network named `incusbr0` and storage pool named `default`
+during initialization, or select existing ones with `--network` and `--storage`.
+The storage driver must support root disk size limits, for example Btrfs or ZFS.
+The directory driver on an ordinary ext4 filesystem cannot enforce container
+disk quotas. Host networking and storage setup are explicit administrative steps;
+`agent-vm` does not modify them.
+
+```sh
+# Hardware VM (requires working KVM and Incus's QEMU/firmware dependencies).
+agent-vm create agent-dev --backend incus
+
+# Unprivileged system container (requires no hardware virtualization).
+agent-vm create agent-container --backend incus --container
+
+# Optional resources, existing storage pool, and managed network.
+agent-vm create another-dev --backend incus --container \
+  --cpus 8 --memory 8GiB --disk 100GiB --storage default --network incusbr0
+
+agent-vm install-ssh agent-dev --backend incus
+ssh incus-agent-dev
+ssh root@incus-agent-dev
+agent-vm verify agent-dev --backend incus
+agent-vm configure agent-dev --backend incus
+agent-vm set-token agent-dev --backend incus
+
+incus --force-local --project default stop agent-dev
+incus --force-local --project default start agent-dev
+```
+
+All actions, including optional dotfiles, use the same guest setup and acceptance
+checks as Lima. `--container`, `--network`, and `--storage` apply only to Incus
+`create` and `render`. Existing instance types are discovered from Incus; do not
+repeat `--container` on `configure` or `verify`. A VM creation failure never
+silently switches to a container. `render --backend incus` prints the JSON/YAML
+configuration passed to `incus init`; the launcher supplies the image, name,
+`--no-profiles`, and `--vm` (unless `--container`) separately.
+
+Creation inherits no Incus profiles. The only devices are a root disk in the
+selected pool and a NIC on the selected managed network. Containers explicitly
+use `security.privileged=false`, `security.idmap.isolated=true`, and
+`security.nesting=true`; nested namespaces allow Codex's bubblewrap sandbox to
+run. Containers share the Linux host kernel, so they provide a different
+isolation boundary from a hardware VM. The CLI rejects inherited profiles,
+additional devices, host mounts/sockets, raw configuration, cloud-init scripts,
+and other unsupported settings before running guest commands. CPU/memory/disk
+changes should use Incus's own configuration tools.
+
+Each Incus instance gets a new host-side Ed25519 key under
+`~/.ssh/agent-vms/incus/NAME/`. Creation sends only its public key through Incus
+to initialize root and dev SSH. The SSH host key is obtained through the local
+Incus control plane and pinned in that directory's `known_hosts`. Provisioning,
+verification, and token transfer then use SSH, with agent forwarding disabled.
+Keep this directory to retain access; no personal host keys are imported.
+
+The generated SSH entry uses `incus exec` and guest `nc` as a byte-stream proxy
+to the guest SSH server. Connections therefore need no fixed guest IP or host
+port, and the same entry survives stop/start. The account opening SSH must have
+access to the local Incus daemon. `install-ssh` stores `NAME.incus.config`, which
+can coexist with Lima entries, and preserves your existing SSH configuration.
+For a desktop running on this Linux host, select `incus-NAME` as the SSH host.
+When Incus runs inside Lima, these aliases live inside the Lima host VM.
+
+If provisioning fails after SSH bootstrap, fix the cause and run `configure`.
+A failure before SSH bootstrap may require deleting the incomplete instance
+with Incus and creating it again. After deliberately deleting an instance, move
+its `~/.ssh/agent-vms/incus/NAME/` directory aside before reusing the name. The
+launcher refuses to reuse an old instance's identity. It does not automatically
+delete failed instances, images, or host SSH state.
+
+To test nested Incus VMs on a Mac, create a separate Lima Linux host with
+`limactl start --nested-virt --mount-none --containerd=none --name=incus-host template:ubuntu-26.04`,
+install Incus and the Linux `agent-vm` executable there, and follow the commands
+above. Check `/dev/kvm` and an actual VM boot; the device alone does not prove
+the complete nested VM stack works. Use `--container` when nested VMs cannot boot.
+See [VALIDATION.md](VALIDATION.md) for the tested environment and results.
 
 ### Everyday use
 
@@ -132,11 +221,12 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 
 | File | Responsibility |
 | --- | --- |
-| `cli.go`, `vm.go`, `process.go`, `terminal.go`, `ssh.go` | Host CLI, orchestration, subprocesses, terminal input, and SSH configuration |
+| `cli.go`, `vm.go`, `incus.go`, `process.go`, `terminal.go`, `ssh.go` | Host CLI, Lima/Incus orchestration, subprocesses, terminal input, and SSH configuration |
 | `assets.go` | Embeds the recipe at build time |
 | `lima/agent.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
 | `lima/bootstrap.sh` | Creation-only setup of key-based root SSH |
-| `lima/provision.sh` | Repeatable OS, account, SSH, GitHub helper, and Codex installation |
+| `incus/bootstrap.sh` | Creation-only SSH/account setup through Incus |
+| `lima/provision.sh` | Shared repeatable OS, account, SSH, GitHub helper, and Codex installation for both backends |
 | `lima/dotfiles.sh` | Optional per-account dotfiles installation for root and dev |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
@@ -290,7 +380,7 @@ builds the four archives and Homebrew formula using the hosting repository's nam
 and creates a **draft** GitHub release. Review and publish the draft, then copy
 its generated `agent-vm.rb` into `Formula/agent-vm.rb` in your Homebrew tap. Users
 can then install with `brew install OWNER/TAP/agent-vm`; the formula depends on
-Lima. Replace OWNER/TAP with the actual tap name. No public release or tap is
+Lima on macOS; install your chosen backend separately on Linux. Replace OWNER/TAP with the actual tap name. No public release or tap is
 created by a local build.
 
 ## Original project goals

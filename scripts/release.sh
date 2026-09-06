@@ -41,11 +41,12 @@ if [[ -n "$repository" ]]; then
   base="https://github.com/$repository/releases/download/$version"
   cat > "$dist/agent-vm.rb" <<FORMULA
 class AgentVm < Formula
-  desc "Provision isolated Lima development VMs"
+  desc "Provision Lima or Incus development environments"
   homepage "https://github.com/$repository"
   version "${version#v}"
 
   on_macos do
+    depends_on "lima"
     on_arm do
       url "$base/agent-vm_${version}_darwin_arm64.tar.gz"
       sha256 "$(checksum darwin_arm64)"
@@ -65,8 +66,6 @@ class AgentVm < Formula
       sha256 "$(checksum linux_amd64)"
     end
   end
-
-  depends_on "lima"
 
   def install
     bin.install "agent-vm"
