@@ -4,3 +4,33 @@ go = "1.27.1"
 [env]
 # Keep Go from automatically downloading a different toolchain.
 GOTOOLCHAIN = "local"
+
+[tasks.default]
+description = "Build the host CLI"
+depends = ["build"]
+
+[tasks.guest]
+description = "Build and compress Linux guest verifiers"
+run = "bash scripts/build-guest.sh"
+
+[tasks.build]
+description = "Build .build/agent-vm with embedded guest verifiers"
+depends = ["guest"]
+run = 'CGO_ENABLED=0 "${GO:-go}" build -trimpath -ldflags "-X main.version=${VERSION:-dev}" -o .build/agent-vm ./cmd/agent-vm'
+
+[tasks.test]
+description = "Run Go tests"
+depends = ["guest"]
+run = '"${GO:-go}" test ./...'
+
+[tasks.check]
+description = "Run tests, build, Go vet, and Bash syntax checks"
+depends = ["test", "build"]
+run = [
+  '"${GO:-go}" vet ./...',
+  'for script in lima/bootstrap.sh lima/provision.sh lima/dotfiles.sh incus/bootstrap.sh scripts/build-guest.sh scripts/release.sh; do bash -n "$script" || exit; done',
+]
+
+[tasks.release]
+description = "Build release archives: mise run release vX.Y.Z [OWNER/REPO]"
+run = "bash scripts/release.sh"

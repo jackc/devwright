@@ -32,7 +32,7 @@ From a source checkout, install [mise](https://mise.jdx.dev/getting-started.html
 ```sh
 mise trust
 mise install
-mise exec -- make build
+mise run build
 mkdir -p ~/.local/bin
 install -m 755 .build/agent-vm ~/.local/bin/agent-vm
 export PATH="$HOME/.local/bin:$PATH"  # also add this to your shell startup file
@@ -367,22 +367,26 @@ data and temporary directories. Terminal regressions open temporary pseudo-termi
 they need `/dev/tty` access when run inside a filesystem sandbox.
 
 ```sh
-mise exec -- make check                 # Go tests/vet, verifier and terminal tests, Bash syntax
-mise exec -- make build                 # .build/agent-vm, recipe and guest verifiers embedded
+mise run check                         # Go tests/vet, verifier and terminal tests, Bash syntax
+mise run build                         # .build/agent-vm, recipe and guest verifiers embedded
 mise exec -- go test -race ./...
-mise exec -- make release VERSION=v0.1.0 # four OS/CPU archives and checksums
+mise run release v0.1.0                 # four OS/CPU archives and checksums
 # Supply the actual hosting repository to also generate a Homebrew formula:
-mise exec -- make release VERSION=v0.1.0 REPOSITORY=OWNER/REPO
+mise run release v0.1.0 OWNER/REPO
 ```
 
 Run `mise trust` and `mise install` when setting up a checkout. If mise is
 [activated in your shell](https://mise.jdx.dev/getting-started.html#activate-mise),
-you can omit `mise exec --`. After changing the Go pin in `mise.toml`, run
+you can omit `mise exec --` for direct Go commands. Tasks use `mise run` either way.
+After changing the Go pin in `mise.toml`, run
 `mise install` again. Mise sets `GOTOOLCHAIN=local` so Go uses the pinned compiler
 instead of automatically downloading a newer toolchain.
 
-`make build`, `make test`, and `make check` first cross-compile and compress both
-Linux guest verifiers. For direct `go build` or `go test` commands, run `make guest`
+`mise run` defaults to `build`. To embed a custom host version, use
+`VERSION=v0.1.0 mise run build`.
+
+`mise run build`, `mise run test`, and `mise run check` first cross-compile and compress both
+Linux guest verifiers. For direct `go build` or `go test` commands, run `mise run guest`
 first and rerun it after changing verifier code. Generated files in `guestbin/`
 are ignored by Git. Releases rebuild them before embedding them in each host binary.
 Provisioning selects the guest architecture with `uname -m`; it installs no Ruby
