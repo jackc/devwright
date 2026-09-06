@@ -1,6 +1,6 @@
 # Dev Sandbox
 
-Isolated development environments for humans and coding agents.
+Isolated development environments for humans and coding agents, using VMs, containers, or restricted native OS accounts.
 
 ## Development VMs and containers
 
@@ -162,6 +162,173 @@ install Incus and the Linux `dev-sandbox` executable there, and follow the comma
 above. Check `/dev/kvm` and an actual VM boot; the device alone does not prove
 the complete nested VM stack works. Use `--container` when nested VMs cannot boot.
 See [VALIDATION.md](VALIDATION.md) for the tested environment and results.
+
+### Restricted native users on Linux and macOS
+
+Use `--backend user` to develop directly on the host as a separate OS account.
+This backend requires no Lima, Incus, container, or new SSH daemon. The host's
+existing system OpenSSH service supplies access; its network exposure remains
+whatever the host administrator configured. The generated client alias connects
+to localhost. Port 22 is the default; `--ssh-port` selects an **existing** SSH port,
+never allocates one or creates a listener.
+
+```sh
+# Run as your normal administrator login; administrative steps invoke sudo.
+dev-sandbox create project-a --backend user
+dev-sandbox install-ssh project-a --backend user
+ssh user-project-a
+# Or enter an interactive shell without installing an SSH alias:
+dev-sandbox shell project-a --backend user
+
+dev-sandbox list --backend user
+dev-sandbox verify project-a --backend user
+dev-sandbox configure project-a --backend user
+
+# An existing system SSH service using a different port:
+dev-sandbox create project-b --backend user --ssh-port 2222
+```
+
+An environment named `project-a` creates account and private group
+`dsb-project-a`, with home `/home/dsb-project-a` on Linux or
+`/Users/dsb-project-a` on macOS. Native environment names have a 28-character
+limit. Homes have mode 0700, development credentials have mode 0600, and the
+accounts receive no sudo permissions or administrative groups. macOS accounts
+are hidden from the login window and receive no Secure Token/FileVault setup.
+macOS public-folder sharing groups are permitted only when their Directory
+Services record directly includes `Everyone`. This is existing public access;
+private sharing groups and inherited administrative memberships are rejected.
+The standard `_lpoperator` printing group is likewise permitted only when its
+record directly includes `localaccounts`; `_lpadmin` remains forbidden. Native
+accounts share the host's ordinary local printing access. No printing or sharing
+group policies are changed to grant them access.
+An existing account, group, home, or unmanaged target file is never adopted.
+
+Linux hosts need systemd, shadow account utilities, sudo, OpenSSH client/server,
+Git, curl, and Bash. Codex's workspace sandbox also needs functioning Linux
+sandbox support; Ubuntu 26.04's packaged bubblewrap/AppArmor setup is the tested
+configuration. Other systemd/shadow distributions are supported by prerequisite
+and behavior checks but have not received this repository's full acceptance run.
+On macOS, install Command Line Tools for Git and enable **Remote Login** in System
+Settings before creation. No host packages are installed automatically.
+On a newly enabled Mac, Remote Login creates its SSH host keys on the first
+connection. The CLI and acceptance script connect before inspecting the server
+configuration so this normal macOS initialization can finish.
+
+The main SSH server configuration must already have a global
+`Include /etc/ssh/sshd_config.d/*.conf` (or `*`) directive. The tool installs a
+scoped `Match User` drop-in and root-owned public-key file for each managed
+account. It checks the effective settings, rejects conflicting host policy,
+and reloads an already active Linux `ssh.service`/`sshd.service` when needed.
+It never enables, starts, stops, or restarts the host service. macOS Remote Login
+reads configuration for new connections; when its allowlist group exists,
+only the new account's membership in that group is added. The tool does not
+rewrite the main SSH configuration or change global authentication settings.
+
+The managed SSH rules require public-key authentication and disable password,
+keyboard-interactive, agent forwarding, X11 forwarding, and user SSH startup
+commands. Local TCP forwarding remains available for development clients.
+A host policy enabling `PermitUserEnvironment` is rejected; disable it
+administratively before using this backend. Site-wide SSH allowlists and other
+access policy may also need host-admin changes, which verification reports.
+
+Each boundary gets a fresh operator-side key under
+`~/.ssh/dev-sandbox/user/NAME/`. The system server's host keys are read through
+the local administrative interface and pinned there. A host-key change requires
+operator review; the CLI will not silently replace the pin. Use the same operator
+login for subsequent commands and retain this directory. Generated aliases use
+`NAME.user.config`, alongside existing Lima/Incus aliases. Direct SSH through
+an installed alias requires no sudo; native administration and the `shell`
+convenience action perform administrative checks through sudo.
+
+Codex installs inside the restricted home, with its command at `~/.local/bin/codex`.
+Configuration supplies editable workspace/on-request defaults, preserves inherited
+development credentials, and initially disables integrations in the user config.
+These are **user defaults, not enforced managed requirements**. Existing host-wide
+Codex policy remains untouched. `--codex-config` and `--replace-codex-config` work;
+`--codex-requirements`, `--reset-codex-requirements`, and VM resource flags are
+rejected for this backend before provisioning.
+
+Each account gets `~/.config/dev-sandbox/credentials.sh` and Bash/Zsh startup hooks,
+using the same credential convention described below. Configuration preserves
+credential contents, projects, and personal Codex configuration. Optional
+`--dotfiles-repo` / `--dotfiles-install` runs only as the restricted account.
+Git configuration remains account-local; the GitHub helper is configured when
+`gh` is already available. Host credentials and the administrator's dotfiles are
+not copied or sourced. Configure while development programs are idle; existing
+process environments do not update when credential files change.
+
+```sh
+# Close the account's shells and stop its processes first.
+dev-sandbox delete project-a --backend user                # preserve its home
+dev-sandbox delete project-b --backend user --remove-home  # explicitly erase it
+```
+
+Deletion requires an explicit name and refuses running processes. On Linux,
+systemd's user manager can briefly remain after the last SSH session closes;
+wait for it to exit before retrying. To remove an already retained home, repeat `delete NAME --backend user --remove-home`.
+Retained homes move beneath the root-private
+`/home/.dev-sandbox-archives` or `/Users/.dev-sandbox-archives` directory. The CLI
+prints their exact path. Removal never recursively changes the ownership of
+retained files. It removes the account's SSH/sudo entries and the operator's
+managed client files, while leaving the shared SSH service running.
+macOS can retain `distnoted` and `cfprefsd` for a user after its last SSH session
+ends. These still count as running processes. After closing the account's work,
+inspect `sudo launchctl print user/UID` and explicitly unload that user's domain
+with `sudo launchctl bootout user/UID` before retrying deletion. Use the managed
+account's recorded UID; the deletion command does not terminate processes itself.
+
+Root-owned registry records live under `/var/lib/dev-sandbox/users` on Linux or
+`/private/var/db/dev-sandbox/users` on macOS. Deleted records reserve their names
+and numeric IDs; use another environment name when creating a replacement.
+Interrupted configuration remains recorded and can be retried with `configure`;
+interrupted deletion can be retried with `delete` using the same home-retention
+choice. Identity mismatches and unrelated files are refused rather than repaired
+by adopting them. The shared root-owned verifier and registry directories remain
+installed after the last account is deleted.
+
+The enforced boundary is the OS account: private account files, group membership,
+and administrative access. Accounts still share the host kernel, networking,
+world-readable files, writable public areas, and resources. Existing host secrets
+must already have appropriate OS permissions; this tool does not change other
+users' home permissions. Programs under one account can read that account's
+credentials and change its tools and defaults. No filesystem allowlist, network
+allowlist, CPU/memory quota, GUI isolation, or defense against kernel bugs is
+claimed. Files created outside the managed home are not swept during deletion.
+
+#### Native acceptance testing
+
+The macOS test is a standalone script requiring a built executable and enabled
+Remote Login. Run it as your administrator login, **not as root**:
+
+```sh
+mise run build
+bash tests/users-macos.sh "$PWD/.build/dev-sandbox"
+# Keep fixtures for inspection, then use the printed cleanup command:
+bash tests/users-macos.sh "$PWD/.build/dev-sandbox" --keep
+bash tests/users-macos.sh --cleanup /path/printed/by/the/test
+```
+
+The test creates two disposable accounts with synthetic credentials and a private
+client HOME. It checks SSH/shell access, cross-account isolation, credential and
+configuration preservation, wrong-key rejection, active-process deletion refusal,
+private home archiving, and preservation of unrelated host configuration. It
+never uses real GitHub or Codex credentials. Logs and identity tombstones remain
+for inspection; fixture accounts and homes are removed by default. On macOS the
+test verifies each fixture against its root-owned registry and unloads only that
+fixture's user domain when its sole remaining processes are Apple's `distnoted`
+and `cfprefsd`, parented by launchd. Other workloads prevent cleanup and are
+listed with a retry command. The host's system SSH domain is untouched.
+
+For Linux, run `bash tests/users-linux.sh /absolute/path/dev-sandbox` on a prepared
+host, or `mise run test-users-linux-vm` from this checkout. The VM driver creates a
+stock Ubuntu 26.04 Lima VM with separate Lima state and no host mounts, installs
+test prerequisites and an explicit persistent SSH host key inside that VM, runs
+acceptance plus a stop/start persistence check, and deletes only that VM. The
+explicit test key avoids the Lima boot setup replacing the image's default keys;
+normal native account management never changes server host keys.
+Use `bash tests/users-linux-vm.sh --keep` to retain it for debugging. Existing
+Lima VMs are not used. Full macOS account/Remote Login acceptance remains manual;
+see [VALIDATION.md](VALIDATION.md) for actual results.
 
 ### Everyday use
 
@@ -334,7 +501,7 @@ are idle because it updates installed software and reloads SSH configuration.
 
 The executable includes default Codex files. Supply explicit host file paths to
 replace either complete file; settings are not merged and project directories
-are not searched automatically. Both backends support these options:
+are not searched automatically. The Lima and Incus backends support these options:
 
 ```sh
 dev-sandbox create my-dev \

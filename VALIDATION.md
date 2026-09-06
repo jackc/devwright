@@ -1,4 +1,119 @@
-# Lima, Incus, and Codex validation
+# Native users, Lima, Incus, and Codex validation
+
+## Native restricted accounts using system SSH
+
+Tested September 6, 2026 on macOS arm64, using disposable stock Ubuntu 26.04
+arm64 Lima/VZ VMs for privileged Linux acceptance. Native accounts ran Codex
+0.153.4. Privileged native-account acceptance passed on both Linux and macOS;
+the operator performed the macOS run manually and supplied the successful output.
+The operator's first manual run stopped before account creation because direct
+`sshd -T` validation preceded macOS Remote Login's first connection and host-key
+initialization. Remote Login was enabled, with no host keys present. A localhost
+SSH probe succeeded and macOS generated its standard host keys. Both the CLI
+and acceptance script now wait for the existing SSH service before invoking
+`sshd` directly; neither enables the service nor generates host keys itself.
+Regression tests cover initialization order, an unreachable/wrong service, and
+preserving configuration-validation failures after the connection succeeds.
+
+The operator's second macOS run created the first account but failed its group
+audit, then deleted that account successfully. Read-only inspection established
+that `com.apple.sharepoint.group.1` represents the operator's Public Folder and
+directly nests the OS `Everyone` group. Both verifiers now recognize that specific
+public-access case using the directory record, while rejecting private sharing
+groups, lookalike names, and inherited administrative groups. Restriction removes
+only explicit account memberships and preserves the host's nested-group rules.
+Privilege audits also run before user installers. Administrative commands now
+start in `/`, and target-user commands in their managed home, to avoid inheriting
+the operator's inaccessible working directory.
+
+The next manual run reached the pre-install group audit and rejected
+`_lpoperator`, then cleaned up its account. Inspection of the host's complete
+nested-group list and the `nobody` account's effective memberships confirmed
+that `_lpoperator` directly inherits `localaccounts`; `_lpadmin` inherits `admin`.
+Both verifiers now accept the former only with that confirmed directory-record
+relationship and continue to reject print administration. Regression coverage
+includes the complete observed automatic group set, private/direct printing
+grants, and all incompatible memberships reported in one pass. The updated check
+also passed a read-only run against the live `nobody` account and Directory
+Services records (`nobody`, `everyone`, `localaccounts`, the public sharing group,
+and `_lpoperator`). Go checks, race tests, and all four builds passed afterward.
+
+The following manual run completed creation, real SSH/Codex verification for
+both accounts, isolation and preservation checks, malformed-config recovery,
+wrong-key rejection, and active-process deletion refusal. It stopped before
+archive testing because macOS retained per-user `distnoted` and `cfprefsd` for
+both fixture UIDs (1002 and 1003); process inspection found no remaining user
+workloads. The harness now validates fixture registry ownership, UID, GID, home,
+and GUID before unloading only that fixture's user domain, and only when those
+two Apple helpers are the sole remaining processes. Other workloads still block
+cleanup. The active-process canary now exits through its own stop marker instead
+of producing an expected SIGTERM diagnostic. Production deletion continues to
+reject every running process and now lists their PIDs and executable paths.
+The retained fixtures required the operator's privileged cleanup rerun; sudo
+authorization was unavailable to the agent.
+Go checks, race tests, and all four builds passed after the cleanup changes.
+The updated Linux acceptance script also passed through reboot and fixture/VM
+removal, with no synthetic SIGTERM warning. Latest logs are retained in
+`.build/users-vm.ngYNlG/acceptance.log` and `.build/users-vm.ngYNlG/reboot.log`.
+
+The operator then successfully cleaned up both retained macOS fixtures from
+`dev-sandbox-users.tUU1p4` and reran the full acceptance script. The run passed
+native create/configure/list, shell/SSH, private accounts, credential
+preservation, wrong-key rejection, active-process deletion refusal, private home
+archiving, and unrelated host configuration checks. Both new fixtures,
+`dsb-nt178873143482283a` and `dsb-nt178873143482283b`, were removed successfully,
+including their remaining macOS background services. The operator-reported logs
+are at `/var/folders/f_/ys54bt8s5v54k1rqhs6jt92m0000gn/T/dev-sandbox-users.5ig4Ch`.
+
+- Linux acceptance passed with two disposable accounts: private homes and
+  credentials, clean SSH environments, cross-account file/process isolation,
+  effective sudo denial, protected management paths, and wrong-key rejection.
+- Creation, listing, SSH client installation, interactive `shell`, repeated
+  configuration, and verification passed. Configuration preserved projects,
+  credentials, personal config, and startup-file symlinks. Explicit config
+  replacement preserved the former symlink target. Malformed startup blocks
+  failed without losing their contents; repair followed by `configure` recovered.
+- Invalid VM/policy flags and existing-account collisions were refused.
+  A tampered registry UID was rejected, and a symlink replacing the managed
+  authorized-key file was refused without modifying its synthetic target.
+  Deletion refused an active account without killing its process. Default
+  deletion retained a home behind root-private archive storage; another account
+  could not read it. A subsequent explicit `delete --remove-home` purged it.
+  Direct home removal and recorded-fixture cleanup also passed.
+- The main host SSH configuration, unrelated operator's effective SSH settings,
+  global Git configuration, system Codex requirements, and main sudoers file
+  remained unchanged. The existing SSH service continued serving connections.
+- Native verification started Codex and exercised its workspace defaults:
+  workspace writes succeeded and outside-workspace writes failed. These are
+  editable defaults, not enforced native account policy.
+- `tests/users-linux-vm.sh` passed from fresh VM creation through acceptance,
+  stop/start, SSH and Codex verification after reboot, fixture cleanup, and VM
+  deletion. Lima replaces the image's default SSH host keys on boot, so this
+  disposable test host uses an explicit persistent host key established before
+  acceptance. The product continues to reject changed pinned host keys.
+  The rerun after the macOS group and working-directory fixes also passed,
+  including creation from a private operator directory and checks that target
+  commands start in their managed homes. Latest logs are retained locally in
+  `.build/users-vm.2WMYy3/acceptance.log` and `.build/users-vm.2WMYy3/reboot.log`,
+  including the tamper and symlink regressions, effective directory-ID collision
+  checks, and archive purging.
+- `mise run check`, `go test -race ./...`, and `git diff --check` passed. Checks
+  included Go tests, vet, a host build, and Bash syntax validation. Host CLI
+  builds passed for Linux/macOS on arm64/amd64; all four embedded verifiers
+  were built and their ELF/Mach-O architectures checked. Local Go runs used
+  `.build/go-cache` to keep cache writes inside the checkout.
+
+The standalone macOS script accepts a built executable, requires Remote Login
+and an administrator's sudo access, uses only synthetic credentials, and records
+its disposable fixtures. `--keep` retains fixtures; `--cleanup FIXTURE` removes
+those recorded accounts. It does not enable Remote Login or install host packages.
+See the README for prerequisites and commands. All disposable Linux test VMs
+created for this work were removed; existing development VMs were untouched.
+
+Authenticated model execution, real private repository access, and GUI/FileVault
+integration remain untested. These
+accounts share the host kernel, network, and resources; the tests do not establish
+VM-equivalent isolation or protection against host vulnerabilities.
 
 ## Dev Sandbox naming and packaging
 

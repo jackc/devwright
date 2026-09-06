@@ -10,7 +10,7 @@ description = "Build the host CLI"
 depends = ["build"]
 
 [tasks.guest]
-description = "Build and compress Linux guest verifiers"
+description = "Build and compress Linux/macOS verifiers"
 run = "bash scripts/build-guest.sh"
 
 [tasks.build]
@@ -28,9 +28,13 @@ description = "Run tests, build, Go vet, and Bash syntax checks"
 depends = ["test", "build"]
 run = [
   '"${GO:-go}" vet ./...',
-  'for script in lima/bootstrap.sh lima/provision.sh lima/dotfiles.sh lima/credentials.sh incus/bootstrap.sh scripts/build-guest.sh scripts/release.sh tests/environment-linux.sh; do bash -n "$script" || exit; done',
+  'for script in lima/bootstrap.sh lima/provision.sh lima/dotfiles.sh lima/credentials.sh incus/bootstrap.sh scripts/build-guest.sh scripts/release.sh tests/environment-linux.sh tests/users-linux.sh tests/users-linux-vm.sh tests/users-macos.sh; do bash -n "$script" || exit; done',
 ]
 
 [tasks.release]
 description = "Build release archives: mise run release vX.Y.Z [OWNER/REPO]"
 run = "bash scripts/release.sh"
+
+[tasks.test-users-linux-vm]
+description = "Run native-user acceptance in a disposable Ubuntu Lima VM"
+run = "bash tests/users-linux-vm.sh"

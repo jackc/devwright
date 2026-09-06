@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"debug/elf"
+	"debug/macho"
 	"io"
 	"testing"
 )
@@ -38,5 +39,31 @@ func TestEmbeddedGuestArchitectures(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEmbeddedDarwinArchitectures(t *testing.T) {
+	for arch, cpu := range map[string]macho.Cpu{"arm64": macho.CpuArm64, "amd64": macho.CpuAmd64} {
+		payload, err := recipe.ReadFile("guestbin/verify-darwin-" + arch + ".gz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader, err := gzip.NewReader(bytes.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		binary, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		executable, err := macho.NewFile(bytes.NewReader(binary))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if executable.Cpu != cpu {
+			t.Fatalf("unexpected Darwin CPU: %v", executable.Cpu)
+		}
+		executable.Close()
 	}
 }

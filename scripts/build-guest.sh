@@ -4,8 +4,10 @@ cd "$(dirname "$0")/.."
 mkdir -p guestbin
 staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT
+for goos in linux darwin; do
 for arch in arm64 amd64; do
-  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "${GO:-go}" build -trimpath -ldflags '-s -w' -o "$staging/verify" ./cmd/dev-sandbox-verify
-  gzip -n -c "$staging/verify" > "$staging/verify-linux-$arch.gz"
-  mv "$staging/verify-linux-$arch.gz" guestbin/
+  CGO_ENABLED=0 GOOS="$goos" GOARCH="$arch" "${GO:-go}" build -trimpath -ldflags '-s -w' -o "$staging/verify" ./cmd/dev-sandbox-verify
+  gzip -n -c "$staging/verify" > "$staging/verify-$goos-$arch.gz"
+  mv "$staging/verify-$goos-$arch.gz" guestbin/
+done
 done

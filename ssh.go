@@ -55,11 +55,20 @@ func atomicWrite(path string, data []byte) error {
 }
 
 func (v *vm) installSSH(state instance) error {
-	dir := filepath.Join(v.home, ".ssh", "dev-sandbox")
-	target := filepath.Join(dir, state.Name+".config")
+	filename := state.Name + ".config"
 	if state.Backend == "incus" {
-		target = filepath.Join(dir, state.Name+".incus.config")
+		filename = state.Name + ".incus.config"
 	}
+	backend := "lima"
+	if state.Backend == "incus" {
+		backend = "incus"
+	}
+	return v.installSSHText(filename, sshConfig(state), fmt.Sprintf("SSH ready: ssh %s-%s (dev); ssh root@%s-%s (admin)", backend, state.Name, backend, state.Name))
+}
+
+func (v *vm) installSSHText(filename, content, message string) error {
+	dir := filepath.Join(v.home, ".ssh", "dev-sandbox")
+	target := filepath.Join(dir, filename)
 	if info, err := os.Lstat(target); err == nil && !info.Mode().IsRegular() {
 		return fmt.Errorf("refusing to overwrite non-regular SSH file: %s", target)
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -106,7 +115,7 @@ func (v *vm) installSSH(state instance) error {
 			return err
 		}
 	}
-	if err := atomicWrite(target, []byte(sshHeader+sshConfig(state))); err != nil {
+	if err := atomicWrite(target, []byte(sshHeader+content)); err != nil {
 		return err
 	}
 	if !hasInclude {
@@ -114,10 +123,6 @@ func (v *vm) installSSH(state instance) error {
 			return err
 		}
 	}
-	backend := "lima"
-	if state.Backend == "incus" {
-		backend = "incus"
-	}
-	fmt.Fprintf(v.out, "SSH ready: ssh %s-%s (dev); ssh root@%s-%s (admin)\n", backend, state.Name, backend, state.Name)
+	fmt.Fprintln(v.out, message)
 	return nil
 }

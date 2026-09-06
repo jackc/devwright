@@ -42,7 +42,7 @@ if [[ -n "$repository" ]]; then
   base="https://github.com/$repository/releases/download/$version"
   cat > "$dist/dev-sandbox.rb" <<FORMULA
 class DevSandbox < Formula
-  desc "Provision Lima or Incus development environments"
+  desc "Manage development VMs, containers, or restricted users"
   homepage "https://github.com/$repository"
   version "${version#v}"
 

@@ -16,10 +16,13 @@ import (
 
 const usage = `Usage: dev-sandbox ACTION [NAME] [OPTIONS]
 Actions: render, create, configure, verify, ssh-config, install-ssh
+User backend only: list, shell, delete (delete requires an explicit NAME)
 Default environment: dev
 
 Options (may appear before or after the action):
-  --backend lima|incus    Instance manager (default: lima)
+  --backend lima|incus|user  Boundary manager (default: lima)
+  --ssh-port N            Existing system SSH port (user create/configure/render; default: 22)
+  --remove-home           Delete the managed home instead of archiving it (user delete)
   --container             Create an Incus system container instead of a VM (create/render)
   --network NAME          Incus managed network (default: incusbr0; create/render)
   --storage NAME          Incus storage pool (default: default; create/render)
@@ -47,6 +50,8 @@ type options struct {
 	cpus                                                      int
 	backend, network, storage                                 string
 	container                                                 bool
+	sshPort                                                   int
+	removeHome                                                bool
 	help, version                                             bool
 	set                                                       map[string]bool
 }
@@ -62,6 +67,8 @@ func parseOptions(args []string) (options, error) {
 	f.BoolVar(&o.help, "h", false, "")
 	f.BoolVar(&o.version, "version", false, "")
 	f.StringVar(&o.backend, "backend", "lima", "")
+	f.IntVar(&o.sshPort, "ssh-port", 22, "")
+	f.BoolVar(&o.removeHome, "remove-home", false, "")
 	f.BoolVar(&o.container, "container", false, "")
 	f.StringVar(&o.network, "network", "incusbr0", "")
 	f.StringVar(&o.storage, "storage", "default", "")
@@ -113,14 +120,43 @@ func parseOptions(args []string) (options, error) {
 	}
 	switch o.action {
 	case "render", "create", "configure", "verify", "ssh-config", "install-ssh":
+	case "list", "shell", "delete":
+		if o.backend != "user" {
+			return o, fmt.Errorf("%s applies only to --backend user", o.action)
+		}
 	default:
 		return o, fmt.Errorf("unknown action: %s; use --help", o.action)
 	}
 	if !validName.MatchString(o.name) {
-		return o, errors.New("VM name must start with a letter and contain only lowercase letters, digits, and hyphens (maximum 40 characters)")
+		return o, errors.New("Environment name must start with a letter and contain only lowercase letters, digits, and hyphens (maximum 40 characters)")
 	}
-	if o.backend != "lima" && o.backend != "incus" {
-		return o, errors.New("--backend must be lima or incus")
+	if o.backend != "lima" && o.backend != "incus" && o.backend != "user" {
+		return o, errors.New("--backend must be lima, incus, or user")
+	}
+	if o.backend == "user" {
+		if len(o.name) > 28 {
+			return o, errors.New("user environment names have a maximum of 28 characters")
+		}
+		if o.action == "delete" && len(positional) != 2 {
+			return o, errors.New("delete requires an explicit environment name")
+		}
+		if o.action == "list" && len(positional) != 1 {
+			return o, errors.New("list does not accept a name")
+		}
+		for _, key := range []string{"cpus", "memory", "disk", "codex-requirements", "reset-codex-requirements"} {
+			if o.set[key] {
+				return o, fmt.Errorf("--%s is unsupported by the user backend; host resources and managed Codex requirements remain host-administered", key)
+			}
+		}
+	}
+	if o.set["ssh-port"] && (o.backend != "user" || (o.action != "create" && o.action != "configure" && o.action != "render")) {
+		return o, errors.New("--ssh-port applies only to user create/configure/render")
+	}
+	if o.sshPort < 1 || o.sshPort > 65535 {
+		return o, errors.New("--ssh-port must be between 1 and 65535")
+	}
+	if o.set["remove-home"] && (o.backend != "user" || o.action != "delete") {
+		return o, errors.New("--remove-home applies only to user delete")
 	}
 	for _, key := range []string{"container", "network", "storage"} {
 		if o.set[key] && (o.backend != "incus" || (o.action != "create" && o.action != "render")) {
@@ -186,6 +222,9 @@ func parseOptions(args []string) (options, error) {
 
 // Run executes the CLI. Rendering and help work without Lima or SSH installed.
 func Run(ctx context.Context, args []string, version string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if len(args) == 1 && args[0] == "__user-helper" {
+		return runUserHelper(ctx, stdin, stdout, stderr)
+	}
 	o, err := parseOptions(args)
 	if err != nil {
 		return err
@@ -200,6 +239,9 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 	}
 	if err := o.loadCodexFiles(); err != nil {
 		return err
+	}
+	if o.backend == "user" {
+		return runUserBackend(ctx, o, stdin, stdout, stderr)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
