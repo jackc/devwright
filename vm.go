@@ -75,6 +75,7 @@ func (v *vm) provision() (string, error) {
 	script := string(data)
 	for key, path := range map[string]string{
 		"DEFAULT_REQUIREMENTS": "config/codex/requirements.toml", "REQUIREMENTS": "config/codex/requirements.toml", "CONFIG": "config/codex/config.toml",
+		"DEFAULT_MANAGED_SETTINGS": "config/claude/managed-settings.json", "MANAGED_SETTINGS": "config/claude/managed-settings.json", "CLAUDE_CONFIG": "config/claude/settings.json",
 		"DOTFILES": "lima/dotfiles.sh", "VERIFY_ARM64": "guestbin/verify-linux-arm64.gz", "VERIFY_AMD64": "guestbin/verify-linux-amd64.gz",
 		"CREDENTIALS": "lima/credentials.sh",
 	} {
@@ -85,11 +86,25 @@ func (v *vm) provision() (string, error) {
 		if key == "CONFIG" && v.configPayload != nil {
 			payload = v.configPayload
 		}
+		if key == "MANAGED_SETTINGS" && v.managedPayload != nil {
+			payload = v.managedPayload
+		}
+		if key == "CLAUDE_CONFIG" && v.claudeConfigPayload != nil {
+			payload = v.claudeConfigPayload
+		}
 		if err != nil {
 			return "", err
 		}
 		script = strings.ReplaceAll(script, "__"+key+"_B64__", base64.StdEncoding.EncodeToString(payload))
 	}
+	claudeMode := "preserve"
+	if v.claudeManagedSettings != "" {
+		claudeMode = "custom"
+	}
+	if v.resetClaudeManagedSettings {
+		claudeMode = "default"
+	}
+	script = "claude_policy_mode=" + shellQuote(claudeMode) + "\nreplace_claude_config=" + shellQuote(fmt.Sprint(v.replaceClaudeConfig)) + "\n" + script
 	mode := "preserve"
 	if v.codexRequirements != "" {
 		mode = "custom"

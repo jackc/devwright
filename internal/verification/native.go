@@ -263,6 +263,19 @@ func CheckNative(account, home string, out io.Writer) error {
 	}
 	fmt.Fprintln(out, strings.TrimSpace(stdout))
 	fmt.Fprintln(out, "PASS Codex startup and workspace sandbox; user defaults are editable, not enforced policy")
+	claude := filepath.Join(home, ".local", "bin", "claude")
+	version, stderr, err = probe(claude, "--version")
+	if err != nil {
+		return fmt.Errorf("Claude Code installation: %w: %s", err, stderr)
+	}
+	if _, err := parseClaudeVersion(version); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, strings.TrimSpace(version))
+	if err := nativeClaudeCheck(claude, home, exe, out); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "PASS Claude Code startup and workspace sandbox; user defaults are editable, not enforced policy")
 	fmt.Fprintln(out, "NOT TESTED: authenticated model run, private repository scope, desktop tools, arbitrary host vulnerabilities or resource isolation")
 	return nil
 }
@@ -277,17 +290,22 @@ func NativeSandboxProbe(sibling string, out io.Writer) error {
 	return nil
 }
 
-// WriteUserConfig performs leaf replacement portably, including replacing a
-// symlink itself rather than following it. The whole operation runs as the user.
+// WriteUserConfig installs the account's Codex defaults.
 func WriteUserConfig(account, home string, replace bool, data []byte) error {
+	return WriteUserSettings(account, home, ".codex", "config.toml", replace, data)
+}
+
+// WriteUserSettings performs leaf replacement portably, including replacing a
+// symlink itself rather than following it. The whole operation runs as the user.
+func WriteUserSettings(account, home, subdir, name string, replace bool, data []byte) error {
 	if err := nativeIdentity(account, home); err != nil {
 		return err
 	}
-	dir := filepath.Join(home, ".codex")
+	dir := filepath.Join(home, subdir)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	path := filepath.Join(dir, "config.toml")
+	path := filepath.Join(dir, name)
 	if _, err := os.Lstat(path); err == nil && !replace {
 		return nil
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {

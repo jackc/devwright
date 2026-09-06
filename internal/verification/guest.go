@@ -48,7 +48,7 @@ func Check(out io.Writer) error {
 	if _, err := os.ReadDir("/root"); !errors.Is(err, os.ErrPermission) {
 		return fmt.Errorf("Administrator home access did not fail with permission denial: %v", err)
 	}
-	for _, path := range []string{"/etc/codex", "/etc/codex/requirements.toml", "/usr/local/bin", "/usr/local/share/dev-sandbox"} {
+	for _, path := range []string{"/etc/codex", "/etc/codex/requirements.toml", "/usr/local/bin", "/usr/local/share/dev-sandbox", "/etc/claude-code", "/etc/claude-code/managed-settings.json", "/usr/bin/claude"} {
 		info, err := os.Stat(path)
 		if err != nil {
 			return err
@@ -120,6 +120,9 @@ func Check(out io.Writer) error {
 		}
 	} else {
 		fmt.Fprintln(out, "NOT TESTED: custom policy filesystem/network behavior; bundled workspace/secret-denial probes apply only to the embedded policy")
+	}
+	if err := checkClaude(dev.HomeDir, out); err != nil {
+		return err
 	}
 	fmt.Fprintln(out, "NOT TESTED: authenticated model run, private GitHub repository scope, desktop-provided tool inventory")
 	return nil

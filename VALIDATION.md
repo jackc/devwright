@@ -1,5 +1,42 @@
 # Native users, Lima, Incus, and Codex validation
 
+## Claude Code controls
+
+Implemented September 6, 2026 on macOS arm64 with Claude Code 2.1.261 on the
+host. The recipe now installs Claude Code from Anthropic's signed apt repository
+as the root-owned `/usr/bin/claude`, installs a root-owned
+`/etc/claude-code/managed-settings.json` with the same custom/default/preserve
+selection as the Codex requirements, seeds `/home/dev/.claude/settings.json`
+once, and adds `--claude-managed-settings`, `--reset-claude-managed-settings`,
+`--claude-config`, and `--replace-claude-config`. The Codex policy additionally
+denies `~/.claude/.credentials.json`. Design and rationale are in
+[CLAUDE-CODE-DESIGN.md](CLAUDE-CODE-DESIGN.md).
+
+- `go vet`, `go test ./...`, and `go test -race ./...` passed. New coverage:
+  option validation and user-backend rejection, JSON policy parsing and
+  wrong-typed values, the provisioning file lifecycle against temporary paths
+  (custom selection, manual-edit restoration, preserve/replace, reset, and
+  removal of leftover `managed-settings.d` drop-ins and `managed-mcp.json`),
+  the loopback Messages API stub (streamed `tool_use`, tool-result relay,
+  `end_turn`), posture comparison against `claude sandbox status`, drop-in
+  drift detection, probe outcomes for readable, masked, and denied canaries,
+  and fixture cleanup of the stub-driven checks on success and failure using a
+  fake `claude` built from the test binary.
+- `python3 tests/claude-sandbox-lab.py` passed from a terminal against the real
+  Claude Code binary with the lab's closed policy and with the embedded managed
+  policy: workspace write allowed, outside-workspace write denied, synthetic
+  canary read denied, system files readable, and `example.com` blocked under
+  the closed policy but reachable under the embedded wildcard, as designed.
+- The apt repository's `stable` channel served 2.1.236-1 for arm64; the package
+  contains only `/usr/bin/claude` and a copyright file, and the release key's
+  fingerprint matched the documented value.
+
+Not yet run: fresh guest provisioning with the apt install, `claude sandbox status`
+against a managed file on Linux, the bubblewrap AppArmor interaction with Claude
+Code's sandbox on Ubuntu 26.04 and inside Incus containers, the native-user
+installer flow, and every authenticated behavior. Existing VMs need `configure`
+with the rebuilt CLI before `verify` can check Claude Code.
+
 ## Native restricted accounts using system SSH
 
 Tested September 6, 2026 on macOS arm64, using disposable stock Ubuntu 26.04

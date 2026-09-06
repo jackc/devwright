@@ -32,6 +32,10 @@ Options (may appear before or after the action):
   --reset-codex-requirements Restore the embedded managed policy (configure)
   --codex-config FILE      Initial dev config; existing config is preserved (create/configure)
   --replace-codex-config   Replace existing dev config with --codex-config (configure)
+  --claude-managed-settings FILE  Use and remember a custom managed Claude Code policy (create/configure)
+  --reset-claude-managed-settings Restore the embedded managed Claude Code policy (configure)
+  --claude-config FILE     Initial dev Claude Code settings; existing settings are preserved (create/configure)
+  --replace-claude-config  Replace existing dev Claude Code settings with --claude-config (configure)
   --cpus N                CPUs for a new VM (default: 4; create/render only)
   --memory SIZE           Memory for a new VM, e.g. 8GiB (default: 4GiB; create/render only)
   --disk SIZE             Disk for a new VM, e.g. 100GiB (default: 60GiB; create/render only)
@@ -46,6 +50,9 @@ type options struct {
 	codexRequirements, codexConfig                            string
 	resetCodexRequirements, replaceCodexConfig                bool
 	requirementsPayload, configPayload                        []byte
+	claudeManagedSettings, claudeConfig                       string
+	resetClaudeManagedSettings, replaceClaudeConfig           bool
+	managedPayload, claudeConfigPayload                       []byte
 	action, name, dotfilesRepo, dotfilesInstall, memory, disk string
 	cpus                                                      int
 	backend, network, storage                                 string
@@ -78,6 +85,10 @@ func parseOptions(args []string) (options, error) {
 	f.StringVar(&o.codexConfig, "codex-config", "", "")
 	f.BoolVar(&o.resetCodexRequirements, "reset-codex-requirements", false, "")
 	f.BoolVar(&o.replaceCodexConfig, "replace-codex-config", false, "")
+	f.StringVar(&o.claudeManagedSettings, "claude-managed-settings", "", "")
+	f.StringVar(&o.claudeConfig, "claude-config", "", "")
+	f.BoolVar(&o.resetClaudeManagedSettings, "reset-claude-managed-settings", false, "")
+	f.BoolVar(&o.replaceClaudeConfig, "replace-claude-config", false, "")
 	f.IntVar(&o.cpus, "cpus", 0, "")
 	f.StringVar(&o.memory, "memory", "", "")
 	f.StringVar(&o.disk, "disk", "", "")
@@ -143,9 +154,9 @@ func parseOptions(args []string) (options, error) {
 		if o.action == "list" && len(positional) != 1 {
 			return o, errors.New("list does not accept a name")
 		}
-		for _, key := range []string{"cpus", "memory", "disk", "codex-requirements", "reset-codex-requirements"} {
+		for _, key := range []string{"cpus", "memory", "disk", "codex-requirements", "reset-codex-requirements", "claude-managed-settings", "reset-claude-managed-settings"} {
 			if o.set[key] {
-				return o, fmt.Errorf("--%s is unsupported by the user backend; host resources and managed Codex requirements remain host-administered", key)
+				return o, fmt.Errorf("--%s is unsupported by the user backend; host resources and managed Codex/Claude Code policies remain host-administered", key)
 			}
 		}
 	}
@@ -166,13 +177,14 @@ func parseOptions(args []string) (options, error) {
 	if !validIncusResource.MatchString(o.network) || !validIncusResource.MatchString(o.storage) {
 		return o, errors.New("expected a simple Incus network or storage pool name")
 	}
-	for _, key := range []string{"codex-requirements", "codex-config", "reset-codex-requirements", "replace-codex-config"} {
+	for _, key := range []string{"codex-requirements", "codex-config", "reset-codex-requirements", "replace-codex-config",
+		"claude-managed-settings", "claude-config", "reset-claude-managed-settings", "replace-claude-config"} {
 		if o.set[key] && o.action != "create" && o.action != "configure" {
 			return o, fmt.Errorf("--%s applies only to create and configure", key)
 		}
 	}
-	if (o.resetCodexRequirements || o.replaceCodexConfig) && o.action != "configure" {
-		return o, errors.New("reset/replace Codex options apply only to configure")
+	if (o.resetCodexRequirements || o.replaceCodexConfig || o.resetClaudeManagedSettings || o.replaceClaudeConfig) && o.action != "configure" {
+		return o, errors.New("reset/replace Codex and Claude Code options apply only to configure")
 	}
 	if o.resetCodexRequirements && o.set["codex-requirements"] {
 		return o, errors.New("--reset-codex-requirements conflicts with --codex-requirements")
@@ -180,7 +192,14 @@ func parseOptions(args []string) (options, error) {
 	if o.replaceCodexConfig && !o.set["codex-config"] {
 		return o, errors.New("--replace-codex-config requires --codex-config")
 	}
-	for key, path := range map[string]string{"codex-requirements": o.codexRequirements, "codex-config": o.codexConfig} {
+	if o.resetClaudeManagedSettings && o.set["claude-managed-settings"] {
+		return o, errors.New("--reset-claude-managed-settings conflicts with --claude-managed-settings")
+	}
+	if o.replaceClaudeConfig && !o.set["claude-config"] {
+		return o, errors.New("--replace-claude-config requires --claude-config")
+	}
+	for key, path := range map[string]string{"codex-requirements": o.codexRequirements, "codex-config": o.codexConfig,
+		"claude-managed-settings": o.claudeManagedSettings, "claude-config": o.claudeConfig} {
 		if o.set[key] && path == "" {
 			return o, fmt.Errorf("--%s requires a file path", key)
 		}
@@ -237,7 +256,7 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 		_, err = fmt.Fprintf(stdout, "dev-sandbox %s\n", version)
 		return err
 	}
-	if err := o.loadCodexFiles(); err != nil {
+	if err := o.loadAgentFiles(); err != nil {
 		return err
 	}
 	if o.backend == "user" {

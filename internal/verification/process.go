@@ -24,7 +24,15 @@ func stop(cmd *exec.Cmd) {
 }
 
 func run(ctx context.Context, args ...string) (string, string, error) {
+	return runWith(ctx, "", nil, args...)
+}
+
+// runWith selects the working directory and environment for the child; nil
+// env inherits the verifier's own.
+func runWith(ctx context.Context, dir string, env []string, args ...string) (string, string, error) {
 	cmd := command(ctx, args...)
+	cmd.Dir = dir
+	cmd.Env = env
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	defer stop(cmd)

@@ -16,7 +16,7 @@ enabled = true
 # Linux ownership protects the administrator even outside Codex.
 # These additional denials protect common sensitive paths inside Codex.
 [permissions.filesystem]
-deny_read = ["/root", "~/.ssh", "~/.pgpass", "~/.aws", "~/.gnupg", "~/.kube", "~/.codex/auth.json"]
+deny_read = ["/root", "~/.ssh", "~/.pgpass", "~/.aws", "~/.gnupg", "~/.kube", "~/.codex/auth.json", "~/.claude/.credentials.json"]
 
 [features]
 apps = false

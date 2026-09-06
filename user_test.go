@@ -162,7 +162,7 @@ func TestUserOptions(t *testing.T) {
 			t.Fatalf("%s: %+v %v", action, o, err)
 		}
 	}
-	for _, args := range [][]string{{"create", "x", "--backend", "user", "--cpus", "2"}, {"create", "x", "--backend", "user", "--memory", "4GiB"}, {"create", "x", "--backend", "user", "--container"}, {"create", "x", "--backend", "user", "--codex-requirements", "x"}, {"configure", "x", "--backend", "user", "--reset-codex-requirements"}, {"delete", "--backend", "user"}, {"list", "x", "--backend", "user"}, {"create", strings.Repeat("a", 29), "--backend", "user"}, {"create", "x", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--ssh-port", "0"}, {"verify", "x", "--backend", "user", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--remove-home"}} {
+	for _, args := range [][]string{{"create", "x", "--backend", "user", "--cpus", "2"}, {"create", "x", "--backend", "user", "--memory", "4GiB"}, {"create", "x", "--backend", "user", "--container"}, {"create", "x", "--backend", "user", "--codex-requirements", "x"}, {"configure", "x", "--backend", "user", "--reset-codex-requirements"}, {"create", "x", "--backend", "user", "--claude-managed-settings", "x"}, {"configure", "x", "--backend", "user", "--reset-claude-managed-settings"}, {"delete", "--backend", "user"}, {"list", "x", "--backend", "user"}, {"create", strings.Repeat("a", 29), "--backend", "user"}, {"create", "x", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--ssh-port", "0"}, {"verify", "x", "--backend", "user", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--remove-home"}} {
 		if _, err := parseOptions(args); err == nil {
 			t.Fatalf("accepted %v", args)
 		}
@@ -182,7 +182,7 @@ func TestUserOfflineRender(t *testing.T) {
 		t.Fatal(v)
 	}
 	provisioning, ok := v["provisioning"].(map[string]any)
-	if !ok || provisioning["run_as"] != "dsb-example" || provisioning["config_source"] != "built-in editable defaults" {
+	if !ok || provisioning["run_as"] != "dsb-example" || provisioning["config_source"] != "built-in editable defaults" || provisioning["claude_config_source"] != "built-in editable defaults" {
 		t.Fatal(v)
 	}
 }
@@ -191,7 +191,7 @@ func TestHelperValidation(t *testing.T) {
 	if err := validateUserRequest(good); err != nil {
 		t.Fatal(err)
 	}
-	for _, mutate := range []func(*userRequest){func(r *userRequest) { r.Name = "../root" }, func(r *userRequest) { r.Action = "exec" }, func(r *userRequest) { r.PublicKey += "\ncommand=bad" }, func(r *userRequest) { r.PublicKey = "ssh-rsa junk" }, func(r *userRequest) { r.PublicKey = "" }, func(r *userRequest) { r.Config = []byte("[broken") }, func(r *userRequest) { r.Repository = "https://example.invalid/dotfiles"; r.Installer = "../../root" }, func(r *userRequest) { r.Port = 65536 }, func(r *userRequest) { r.RemoveHome = true }} {
+	for _, mutate := range []func(*userRequest){func(r *userRequest) { r.Name = "../root" }, func(r *userRequest) { r.Action = "exec" }, func(r *userRequest) { r.PublicKey += "\ncommand=bad" }, func(r *userRequest) { r.PublicKey = "ssh-rsa junk" }, func(r *userRequest) { r.PublicKey = "" }, func(r *userRequest) { r.Config = []byte("[broken") }, func(r *userRequest) { r.ClaudeConfig = []byte("[]") }, func(r *userRequest) { r.Repository = "https://example.invalid/dotfiles"; r.Installer = "../../root" }, func(r *userRequest) { r.Port = 65536 }, func(r *userRequest) { r.RemoveHome = true }} {
 		r := good
 		mutate(&r)
 		if err := validateUserRequest(r); err == nil {

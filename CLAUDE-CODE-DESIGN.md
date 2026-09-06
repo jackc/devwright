@@ -1,7 +1,8 @@
 # Claude Code controls: design
 
-Design date: September 6, 2026. Status: **design with validated policy files;
-not yet wired into the CLI, recipe, or verifier.** It gives Claude Code the same
+Design date: September 6, 2026. Status: **implemented in the CLI, recipe, and
+verifier on the same day; host tests pass, guest acceptance in a VM is still
+pending** (see [VALIDATION.md](VALIDATION.md)). It gives Claude Code the same
 treatment the recipe gives Codex: a root-owned, VM-wide managed policy that the
 `dev` account cannot loosen, an editable personal config that provisioning
 preserves, host-side override flags, and credential-free acceptance checks.

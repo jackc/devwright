@@ -17,16 +17,18 @@ import (
 )
 
 type userRequest struct {
-	Action        string
-	Name          string
-	Port          int
-	PortSet       bool
-	RemoveHome    bool
-	Repository    string
-	Installer     string
-	Config        []byte
-	ReplaceConfig bool
-	PublicKey     string
+	Action              string
+	Name                string
+	Port                int
+	PortSet             bool
+	RemoveHome          bool
+	Repository          string
+	Installer           string
+	Config              []byte
+	ReplaceConfig       bool
+	ClaudeConfig        []byte
+	ReplaceClaudeConfig bool
+	PublicKey           string
 }
 
 type userState struct {
@@ -58,7 +60,7 @@ func userHome(name, goos string) string {
 }
 
 func requestForUser(o options) userRequest {
-	return userRequest{Action: o.action, Name: o.name, Port: o.sshPort, PortSet: o.set["ssh-port"], RemoveHome: o.removeHome, Repository: o.dotfilesRepo, Installer: o.dotfilesInstall, Config: o.configPayload, ReplaceConfig: o.replaceCodexConfig}
+	return userRequest{Action: o.action, Name: o.name, Port: o.sshPort, PortSet: o.set["ssh-port"], RemoveHome: o.removeHome, Repository: o.dotfilesRepo, Installer: o.dotfilesInstall, Config: o.configPayload, ReplaceConfig: o.replaceCodexConfig, ClaudeConfig: o.claudeConfigPayload, ReplaceClaudeConfig: o.replaceClaudeConfig}
 }
 
 func runUserBackend(ctx context.Context, o options, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -70,14 +72,20 @@ func runUserBackend(ctx context.Context, o options, stdin io.Reader, stdout, std
 		if o.codexConfig != "" {
 			configSource = o.codexConfig
 		}
+		claudeSource := "built-in editable defaults"
+		if o.claudeConfig != "" {
+			claudeSource = o.claudeConfig
+		}
 		return json.NewEncoder(stdout).Encode(map[string]any{
 			"backend": "user", "account": "dsb-" + o.name, "group": "dsb-" + o.name,
 			"home": userHome(o.name, runtime.GOOS), "home_mode": "0700",
 			"ssh_host": "localhost", "ssh_port": o.sshPort, "ssh_service": "existing system OpenSSH",
-			"codex_policy": "editable user defaults; host requirements untouched",
+			"codex_policy":  "editable user defaults; host requirements untouched",
+			"claude_policy": "editable user defaults; host managed settings untouched",
 			"provisioning": map[string]any{
-				"run_as": "dsb-" + o.name, "codex": "latest stable release in ~/.local/bin",
+				"run_as": "dsb-" + o.name, "codex": "latest stable release in ~/.local/bin", "claude": "stable release in ~/.local/bin",
 				"config_source": configSource, "replace_config": o.replaceCodexConfig,
+				"claude_config_source": claudeSource, "replace_claude_config": o.replaceClaudeConfig,
 				"dotfiles_repository": o.dotfilesRepo, "dotfiles_installer": o.dotfilesInstall,
 				"host_packages": "require existing prerequisites",
 			},

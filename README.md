@@ -4,7 +4,7 @@ Isolated development environments for humans and coding agents, using VMs, conta
 
 ## Development VMs and containers
 
-This project implements a reusable **Ubuntu 26.04 + Codex** environment with
+This project implements a reusable **Ubuntu 26.04 + Codex + Claude Code** environment with
 **Lima VMs** and **Incus VMs or system containers**. Humans and agents develop as `dev`,
 without sudo, in `/home/dev/projects`. Projects in one VM share that account's
 files and credentials. Use another VM when they need separate access.
@@ -21,7 +21,12 @@ the CLI checks Lima's version or access to Incus, plus OpenSSH's required option
 Creation downloads an Ubuntu image and installs packages. Provisioning
 installs the latest stable Codex release with the official standalone installer,
 without requiring Node.js or npm. The root-owned package lives under
-`/usr/local/share/codex`, with its command at `/usr/local/bin/codex`.
+`/usr/local/share/codex`, with its command at `/usr/local/bin/codex`. Claude Code
+comes from Anthropic's signed apt repository on its `stable` channel, as the
+root-owned `/usr/bin/claude`; the release key is accepted only after its
+fingerprint matches the documented value. See
+[CLAUDE-CODE-DESIGN.md](CLAUDE-CODE-DESIGN.md) for the design behind the Claude
+Code controls and what has been validated.
 The OS image selection comes
 from the installed Lima Ubuntu 26.04 image template, or `images:ubuntu/26.04`
 (the default, non-cloud variant) for Incus. OS package versions are not pinned.
@@ -57,7 +62,7 @@ dev-sandbox --help
 dev-sandbox create dev  # installs and verifies the setup
 dev-sandbox install-ssh dev
 
-ssh lima-dev           # dev: development, Codex, repositories
+ssh lima-dev           # dev: development, Codex, Claude Code, repositories
 ssh root@lima-dev   # root: VM administration
 ```
 
@@ -204,9 +209,9 @@ group policies are changed to grant them access.
 An existing account, group, home, or unmanaged target file is never adopted.
 
 Linux hosts need systemd, shadow account utilities, sudo, OpenSSH client/server,
-Git, curl, and Bash. Codex's workspace sandbox also needs functioning Linux
-sandbox support; Ubuntu 26.04's packaged bubblewrap/AppArmor setup is the tested
-configuration. Other systemd/shadow distributions are supported by prerequisite
+Git, curl, Bash, bubblewrap, and socat. Codex's workspace sandbox and Claude
+Code's Bash sandbox both need functioning Linux sandbox support; Ubuntu 26.04's
+packaged bubblewrap/AppArmor setup is the tested configuration for Codex. Other systemd/shadow distributions are supported by prerequisite
 and behavior checks but have not received this repository's full acceptance run.
 On macOS, install Command Line Tools for Git and enable **Remote Login** in System
 Settings before creation. No host packages are installed automatically.
@@ -247,6 +252,16 @@ These are **user defaults, not enforced managed requirements**. Existing host-wi
 Codex policy remains untouched. `--codex-config` and `--replace-codex-config` work;
 `--codex-requirements`, `--reset-codex-requirements`, and VM resource flags are
 rejected for this backend before provisioning.
+
+Claude Code installs the same way, with the official installer on its `stable`
+channel and its command at `~/.local/bin/claude`. The editable defaults in
+`~/.claude/settings.json` turn the Bash sandbox on in strict mode, deny the same
+secret paths to sandboxed commands and the file tools, and turn off connectors,
+MCP servers, and the built-in browser and computer-use servers. Managed-only
+keys cannot be set from a user file, so nothing here is enforced against the
+account's own edits. `--claude-config` and `--replace-claude-config` work;
+`--claude-managed-settings` and `--reset-claude-managed-settings` are rejected
+because the host-wide managed settings file belongs to the host administrator.
 
 Each account gets `~/.config/dev-sandbox/credentials.sh` and Bash/Zsh startup hooks,
 using the same credential convention described below. Configuration preserves
@@ -444,6 +459,14 @@ for your account, use the authentication flow supported by your Codex client.
 Set your Git author name/email as `dev` when needed, or use the optional
 dotfiles installer below. Provisioning does not copy host Git configuration.
 
+Sign in to Claude Code the same way: run `claude` inside the guest and finish
+`/login` by opening the printed URL on the host and pasting the code, or create
+a long-lived token with `claude setup-token` on a trusted machine and add
+`export CLAUDE_CODE_OAUTH_TOKEN='...'` to `credentials.sh`. An interactive login
+is stored in `~/.claude/.credentials.json` with mode `0600`; the managed policy
+denies that file, and Codex's sign-in file, to sandboxed commands and to Claude
+Code's file tools.
+
 For the desktop, add **lima-dev** as an SSH host in its remote connection
 settings, then select a guest directory under `/home/dev/projects`. Use the
 `dev` connection, not a connection with the username `root`. The app may
@@ -464,15 +487,19 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | `lima/credentials.sh` | Private dev credential file and Bash/Zsh startup hooks |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
-| `internal/verification/`, `cmd/dev-sandbox-verify/` | Go Linux, Codex policy, and sandbox acceptance checks |
+| `config/claude/managed-settings.json` | Root-owned, VM-wide managed Claude Code settings |
+| `config/claude/settings.json` | Initial dev Claude Code settings, preserved after first installation |
+| `internal/verification/`, `cmd/dev-sandbox-verify/` | Go Linux, Codex/Claude Code policy, and sandbox acceptance checks |
+| `internal/codexpolicy/`, `internal/claudepolicy/` | The managed policy keys the host validates and the verifier compares |
+| `tests/claude-sandbox-lab.py` | Terminal-run lab exercising Claude Code's sandbox without a model or sign-in |
 | `scripts/build-guest.sh`, `guestbin/` | Build and embed the Linux guest verifiers |
 
 Install the updated executable, then apply its embedded recipe with `configure`.
 Configuration also updates Codex to the latest stable release. When developing
 the recipe, rebuild and reinstall after editing the shared source.
-The version installed during provisioning is recorded
-in `/usr/local/share/dev-sandbox/codex-version` for diagnostics; verification checks
-actual policy behavior rather than requiring that exact version:
+The versions installed during provisioning are recorded
+in `/usr/local/share/dev-sandbox/codex-version` and `claude-version` for diagnostics;
+verification checks actual policy behavior rather than requiring those exact versions:
 
 ```sh
 dev-sandbox configure dev  # applies the recipe and verifies it
@@ -492,9 +519,10 @@ edits take effect only after rebuilding the executable and explicitly running
 executable alone does not modify existing VMs.
 
 `configure` applies setup to a running VM without rebooting it; if stopped, it
-starts the VM first. It installs the latest Codex, restores the selected managed policy and
-system settings, and runs the guest acceptance checks. It preserves `dev`'s
-personal Codex config unless explicitly replaced, plus credentials and projects. Use it while development tools
+starts the VM first. It installs the latest Codex and Claude Code packages, restores the selected
+managed policies and system settings, and runs the guest acceptance checks. It
+preserves `dev`'s personal Codex and Claude Code configs unless explicitly
+replaced, plus credentials and projects. Use it while development tools
 are idle because it updates installed software and reloads SSH configuration.
 
 ### Custom Codex policy and defaults
@@ -553,6 +581,49 @@ those behavior probes as **not tested**: arbitrary filesystem/network policies
 need their own acceptance tests. Successful verification does not certify a
 custom policy as equivalent to the embedded restrictions.
 
+### Custom Claude Code policy and defaults
+
+Claude Code gets the same treatment with its own files. The managed policy is
+installed as `/etc/claude-code/managed-settings.json`, which Claude Code applies
+above every user, project, local, and `--settings` value; the initial personal
+settings go to `/home/dev/.claude/settings.json`. Both are strict JSON objects
+without comments.
+
+```sh
+dev-sandbox create my-dev \
+  --claude-managed-settings ./managed-settings.json \
+  --claude-config ./settings.json
+
+dev-sandbox configure my-dev --claude-managed-settings ./managed-settings.json
+dev-sandbox configure my-dev --claude-config ./settings.json --replace-claude-config
+dev-sandbox configure my-dev --reset-claude-managed-settings
+```
+
+The selection, restore, reset, and replace rules match the Codex options above,
+with the custom copy saved as `/usr/local/share/dev-sandbox/custom-managed-settings.json`.
+The embedded policy turns the Bash sandbox on and refuses to start without it,
+forbids unsandboxed retries and bypass mode, denies the same secret paths as the
+Codex policy plus both agents' sign-in files to sandboxed commands and to the
+Read/Grep/Glob tools, locks read paths so no lower scope can re-open them, allows
+every domain because the VM is the network boundary, and turns off claude.ai
+connectors, configured MCP servers, the built-in browser and computer-use
+servers, plugin marketplaces, sideloaded plugins, and channels. Self-updates are
+disabled so `configure` is the only update path. The initial personal file only
+lets sandboxed commands run without prompts. Claude Code drops individual
+invalid managed entries and keeps the rest, so verification checks the posture
+Claude Code reports rather than trusting the file.
+
+Verification checks that `claude` resolves to the root-owned package, the
+policy checksum, the absence of `managed-settings.d` drop-ins and
+`managed-mcp.json`, and that `claude sandbox status` reports the sandbox on,
+strict, and set by policy. For the embedded policy it then drives one
+non-interactive session through a loopback stub of the Messages API: the stub
+asks Claude Code to run the verifier's probe through the Bash tool, so the real
+sandbox applies without a model or sign-in. The probe checks a workspace write,
+an outside-workspace write denial, and a synthetic `~/.pgpass` read denial,
+then repeats with a lower-scope `allowRead` override that the managed lock must
+ignore. Custom policies report the behavior probe as **not tested**.
+
 ### Optional dotfiles
 
 Pass your own Git repository when creating or configuring a VM:
@@ -588,7 +659,7 @@ alone and does not update or remove them.
 
 ### Configuration behavior
 
-Explicit provisioning restores the selected policy, SSH settings, and `dev`'s empty
+Explicit provisioning restores the selected policies, SSH settings, and `dev`'s empty
 supplementary group list. Manual changes to those settings survive normal
 restarts but are overwritten by `configure`. Root's authorized keys are
 initialized once during creation and are not recopied from development files
@@ -619,6 +690,17 @@ Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user.
 * Linux protects `/root` from `dev`; the embedded managed Codex policy additionally
   denies common sensitive paths, permits workspace writes and direct networking,
   and disables apps, plugins, browser/computer use and configured MCP servers.
+  The embedded managed Claude Code policy does the same for Claude Code's Bash
+  sandbox and file tools. Only Bash is sandboxed there: WebFetch and WebSearch
+  run in Claude Code's own process, and Unix sockets are not blocked on Linux
+  without the optional seccomp filter, which the recipe does not install. The
+  guest exposes no agent, Docker, or Incus socket to `dev`, and the verifier
+  keeps checking that.
+* The Claude desktop app's SSH sessions install their own Claude Code runtime
+  and deliver claude.ai connectors in-process, where `disableClaudeAiConnectors`
+  and the MCP allowlist do not reach them. The managed file still binds that
+  runtime's sandbox and permission controls. Inspect a fresh session's tool
+  inventory before relying on that separation.
 * Ubuntu 26.04 supplies the bubblewrap AppArmor profile. No custom profile is
   installed; Ubuntu's global user-namespace restriction stays enabled, and Codex
   applies its own filesystem sandbox. Older Ubuntu releases are not supported.
@@ -649,6 +731,11 @@ recorded in `go.mod` and `go.sum`. The build toolchain is pinned in `mise.toml`,
 which local development and GitHub Actions both use; `go.mod` records the minimum
 supported Go version. Builds use Bash and gzip; tests use Go, Git, Bash, and
 OpenSSH with synthetic data and temporary directories.
+
+`python3 tests/claude-sandbox-lab.py` exercises Claude Code's real Bash sandbox
+on the host with a loopback stub and synthetic files, using no model or sign-in.
+Run it from a terminal, not inside an agent session; pass
+`--settings config/claude/managed-settings.json` to test the embedded policy.
 
 `tests/environment-linux.sh` additionally checks credential loading on Ubuntu
 26.04 with Bash/Zsh interactive and noninteractive SSH, inherited child

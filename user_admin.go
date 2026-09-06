@@ -88,6 +88,12 @@ func validateUserRequest(r userRequest) error {
 	if r.ReplaceConfig {
 		args = append(args, "--replace-codex-config")
 	}
+	if len(r.ClaudeConfig) > 0 {
+		args = append(args, "--claude-config", "payload")
+	}
+	if r.ReplaceClaudeConfig {
+		args = append(args, "--replace-claude-config")
+	}
 	if _, err := parseOptions(args); err != nil {
 		return err
 	}
@@ -97,6 +103,11 @@ func validateUserRequest(r userRequest) error {
 	if len(r.Config) > 0 {
 		var v map[string]any
 		if err := toml.Unmarshal(r.Config, &v); err != nil {
+			return err
+		}
+	}
+	if len(r.ClaudeConfig) > 0 {
+		if err := checkJSONObject(r.ClaudeConfig); err != nil {
 			return err
 		}
 	}
@@ -476,7 +487,8 @@ func (a *userAdmin) installVerifier() error {
 func (a *userAdmin) preflight(port int) error {
 	required := []string{"/usr/sbin/sshd", "/usr/bin/ssh-keygen", "/usr/bin/sudo", "/usr/bin/git", "/usr/bin/curl", "/bin/bash"}
 	if a.goos == "linux" {
-		required = append(required, "/usr/sbin/useradd", "/usr/sbin/usermod", "/usr/sbin/userdel", "/usr/sbin/groupadd", "/usr/sbin/groupdel", "/usr/bin/getent", "/usr/bin/systemctl")
+		// Claude Code's Linux sandbox needs bubblewrap and socat; the backend installs no packages.
+		required = append(required, "/usr/sbin/useradd", "/usr/sbin/usermod", "/usr/sbin/userdel", "/usr/sbin/groupadd", "/usr/sbin/groupdel", "/usr/bin/getent", "/usr/bin/systemctl", "/usr/bin/bwrap", "/usr/bin/socat")
 	} else {
 		required = append(required, "/usr/bin/dscl", "/usr/sbin/dseditgroup", "/usr/bin/plutil", "/usr/bin/dscacheutil")
 	}

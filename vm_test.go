@@ -65,7 +65,7 @@ func TestEmbeddedRecipe(t *testing.T) {
 	if strings.Contains(script, "_B64__") {
 		t.Fatal("unresolved payload")
 	}
-	for _, path := range []string{"config/codex/requirements.toml", "config/codex/config.toml", "lima/dotfiles.sh", "lima/credentials.sh", "guestbin/verify-linux-arm64.gz", "guestbin/verify-linux-amd64.gz"} {
+	for _, path := range []string{"config/codex/requirements.toml", "config/codex/config.toml", "config/claude/managed-settings.json", "config/claude/settings.json", "lima/dotfiles.sh", "lima/credentials.sh", "guestbin/verify-linux-arm64.gz", "guestbin/verify-linux-amd64.gz"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
