@@ -10,8 +10,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.x'
+      - uses: jdx/mise-action@v4
       - run: make check
       - run: go test -race ./...

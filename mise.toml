@@ -1,0 +1,6 @@
+[tools]
+go = "1.27.1"
+
+[env]
+# Keep Go from automatically downloading a different toolchain.
+GOTOOLCHAIN = "local"

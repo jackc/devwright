@@ -26,10 +26,13 @@ from the installed Lima Ubuntu 26.04 image template, or `images:ubuntu/26.04`
 
 ### Install
 
-From a source checkout, install Go **1.25+**, then build the executable:
+From a source checkout, install [mise](https://mise.jdx.dev/getting-started.html)
+(`brew install mise` on macOS), then install the pinned Go toolchain and build:
 
 ```sh
-make build
+mise trust
+mise install
+mise exec -- make build
 mkdir -p ~/.local/bin
 install -m 755 .build/agent-vm ~/.local/bin/agent-vm
 export PATH="$HOME/.local/bin:$PATH"  # also add this to your shell startup file
@@ -355,20 +358,28 @@ See [VALIDATION.md](VALIDATION.md) for the actual VM test results and research p
 
 The host CLI uses Go's standard library plus `golang.org/x/term` and
 `golang.org/x/sys` for hidden, interruptible token entry. Versions and checksums
-are recorded in `go.mod` and `go.sum`. Source builds require Go 1.25+; guest
+are recorded in `go.mod` and `go.sum`. The build toolchain is pinned in
+`mise.toml`, which local development and GitHub Actions both use; `go.mod`
+records the minimum supported Go version. Guest
 verification and terminal regression tests are also written in Go. Builds use
 Bash and gzip; tests use Git, Bash, and OpenSSH locally, with synthetic
 data and temporary directories. Terminal regressions open temporary pseudo-terminals;
 they need `/dev/tty` access when run inside a filesystem sandbox.
 
 ```sh
-make check                 # Go tests/vet, verifier and terminal tests, Bash syntax
-make build                 # .build/agent-vm, recipe and guest verifiers embedded
-go test -race ./...
-make release VERSION=v0.1.0 # four OS/CPU archives and checksums
+mise exec -- make check                 # Go tests/vet, verifier and terminal tests, Bash syntax
+mise exec -- make build                 # .build/agent-vm, recipe and guest verifiers embedded
+mise exec -- go test -race ./...
+mise exec -- make release VERSION=v0.1.0 # four OS/CPU archives and checksums
 # Supply the actual hosting repository to also generate a Homebrew formula:
-make release VERSION=v0.1.0 REPOSITORY=OWNER/REPO
+mise exec -- make release VERSION=v0.1.0 REPOSITORY=OWNER/REPO
 ```
+
+Run `mise trust` and `mise install` when setting up a checkout. If mise is
+[activated in your shell](https://mise.jdx.dev/getting-started.html#activate-mise),
+you can omit `mise exec --`. After changing the Go pin in `mise.toml`, run
+`mise install` again. Mise sets `GOTOOLCHAIN=local` so Go uses the pinned compiler
+instead of automatically downloading a newer toolchain.
 
 `make build`, `make test`, and `make check` first cross-compile and compress both
 Linux guest verifiers. For direct `go build` or `go test` commands, run `make guest`
