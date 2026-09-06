@@ -1,4 +1,4 @@
-package agentvm
+package devsandbox
 
 import (
 	"bytes"
@@ -25,7 +25,7 @@ func TestOptions(t *testing.T) {
 		}
 	}
 	o, err := parseOptions([]string{"verify"})
-	if err != nil || o.name != "agent-dev" {
+	if err != nil || o.name != "dev" {
 		t.Fatalf("default name: %+v, %v", o, err)
 	}
 }
@@ -33,7 +33,7 @@ func TestOptions(t *testing.T) {
 func TestInvalidOptionsNeverExecute(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	for _, args := range [][]string{
-		{}, {"start"}, {"shell"}, {"admin"}, {"verify", "test; false"}, {"verify", "../test"},
+		{}, {"set-token"}, {"start"}, {"shell"}, {"admin"}, {"verify", "test; false"}, {"verify", "../test"},
 		{"verify", strings.Repeat("a", 41)}, {"verify", "test", "extra"}, {"-"},
 		{"create", "--dotfiles-install", "setup"}, {"verify", "--dotfiles-repo", "repo"},
 		{"create", "--dotfiles-repo", ""}, {"create", "--dotfiles-repo=-repo"},
@@ -59,7 +59,7 @@ func TestOfflineCommands(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--help"}, "Usage: agent-vm"}, {[]string{"--version"}, "agent-vm v1.2.3\n"},
+		{[]string{"--help"}, "Usage: dev-sandbox"}, {[]string{"--version"}, "dev-sandbox v1.2.3\n"},
 		{[]string{"render", "--memory", "8GiB"}, `"memory": "8GiB"`},
 	} {
 		var output bytes.Buffer

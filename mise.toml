@@ -14,9 +14,9 @@ description = "Build and compress Linux guest verifiers"
 run = "bash scripts/build-guest.sh"
 
 [tasks.build]
-description = "Build .build/agent-vm with embedded guest verifiers"
+description = "Build .build/dev-sandbox with embedded guest verifiers"
 depends = ["guest"]
-run = 'CGO_ENABLED=0 "${GO:-go}" build -trimpath -ldflags "-X main.version=${VERSION:-dev}" -o .build/agent-vm ./cmd/agent-vm'
+run = 'CGO_ENABLED=0 "${GO:-go}" build -trimpath -ldflags "-X main.version=${VERSION:-dev}" -o .build/dev-sandbox ./cmd/dev-sandbox'
 
 [tasks.test]
 description = "Run Go tests"
@@ -28,7 +28,7 @@ description = "Run tests, build, Go vet, and Bash syntax checks"
 depends = ["test", "build"]
 run = [
   '"${GO:-go}" vet ./...',
-  'for script in lima/bootstrap.sh lima/provision.sh lima/dotfiles.sh incus/bootstrap.sh scripts/build-guest.sh scripts/release.sh; do bash -n "$script" || exit; done',
+  'for script in lima/bootstrap.sh lima/provision.sh lima/dotfiles.sh lima/credentials.sh incus/bootstrap.sh scripts/build-guest.sh scripts/release.sh tests/environment-linux.sh; do bash -n "$script" || exit; done',
 ]
 
 [tasks.release]

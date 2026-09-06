@@ -1,4 +1,4 @@
-package agentvm
+package devsandbox
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
 )
 
 type instanceConfig struct {
@@ -40,14 +39,13 @@ type vm struct {
 	out         io.Writer
 	run         runner
 	withContext func(context.Context) runner
-	readToken   func() (string, error)
 }
 
 func (v *vm) render() ([]byte, error) {
 	if v.backend == "incus" {
 		return v.renderIncus()
 	}
-	data, err := recipe.ReadFile("lima/agent.json")
+	data, err := recipe.ReadFile("lima/dev-sandbox.json")
 	if err != nil {
 		return nil, err
 	}
@@ -76,15 +74,30 @@ func (v *vm) provision() (string, error) {
 	}
 	script := string(data)
 	for key, path := range map[string]string{
-		"REQUIREMENTS": "config/codex/requirements.toml", "CONFIG": "config/codex/config.toml",
+		"DEFAULT_REQUIREMENTS": "config/codex/requirements.toml", "REQUIREMENTS": "config/codex/requirements.toml", "CONFIG": "config/codex/config.toml",
 		"DOTFILES": "lima/dotfiles.sh", "VERIFY_ARM64": "guestbin/verify-linux-arm64.gz", "VERIFY_AMD64": "guestbin/verify-linux-amd64.gz",
+		"CREDENTIALS": "lima/credentials.sh",
 	} {
 		payload, err := recipe.ReadFile(path)
+		if key == "REQUIREMENTS" && v.requirementsPayload != nil {
+			payload = v.requirementsPayload
+		}
+		if key == "CONFIG" && v.configPayload != nil {
+			payload = v.configPayload
+		}
 		if err != nil {
 			return "", err
 		}
 		script = strings.ReplaceAll(script, "__"+key+"_B64__", base64.StdEncoding.EncodeToString(payload))
 	}
+	mode := "preserve"
+	if v.codexRequirements != "" {
+		mode = "custom"
+	}
+	if v.resetCodexRequirements {
+		mode = "default"
+	}
+	script = "codex_policy_mode=" + shellQuote(mode) + "\nreplace_codex_config=" + shellQuote(fmt.Sprint(v.replaceCodexConfig)) + "\n" + script
 	return "dotfiles_repository=" + shellQuote(v.dotfilesRepo) + "\ndotfiles_install=" + shellQuote(v.dotfilesInstall) + "\n" + script, nil
 }
 
@@ -155,7 +168,7 @@ func (v *vm) bootstrap(state instance) error {
 }
 
 func (v *vm) verify(state instance) error {
-	return v.remote(state, []string{"/usr/local/share/agent-vm/verify"}, "dev", nil)
+	return v.remote(state, []string{"/usr/local/share/dev-sandbox/verify"}, "dev", nil)
 }
 
 func (v *vm) configure(state instance) error {
@@ -189,7 +202,7 @@ func (v *vm) execute() error {
 			return err
 		}
 		// Each invocation gets its own file; installed binaries need no writable checkout.
-		dir, err := os.MkdirTemp("", "agent-vm-")
+		dir, err := os.MkdirTemp("", "dev-sandbox-")
 		if err != nil {
 			return err
 		}
@@ -248,7 +261,7 @@ func (v *vm) execute() error {
 		if err := v.configure(state); err != nil {
 			return err
 		}
-		fmt.Fprintf(v.out, "Created and verified. Set up SSH: agent-vm install-ssh %s --backend %s\n", v.name, v.backend)
+		fmt.Fprintf(v.out, "Created and verified. Set up SSH: dev-sandbox install-ssh %s --backend %s\n", v.name, v.backend)
 	case "configure":
 		return v.configure(state)
 	case "verify":
@@ -258,20 +271,6 @@ func (v *vm) execute() error {
 		return err
 	case "install-ssh":
 		return v.installSSH(state)
-	case "set-token":
-		token, err := v.readToken()
-		if err != nil {
-			return err
-		}
-		if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 || strings.ContainsRune(token, 0) {
-			return errors.New("expected a nonempty token without whitespace")
-		}
-		// Token travels only on SSH stdin, never in a process argument or recipe.
-		command := []string{"/bin/sh", "-c", "umask 077; mkdir -p ~/.config/agent-vm; cat > ~/.config/agent-vm/github-token; chmod 600 ~/.config/agent-vm/github-token"}
-		if err := v.remote(state, command, "dev", strings.NewReader(token+"\n")); err != nil {
-			return err
-		}
-		fmt.Fprintln(v.out, "Token saved for dev. Verify scope against allowed and disallowed PRIVATE repositories.")
 	}
 	return nil
 }

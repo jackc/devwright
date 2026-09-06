@@ -3,6 +3,7 @@ package verification
 import (
 	"bytes"
 	"context"
+	"dev-sandbox/internal/codexpolicy"
 	"encoding/json"
 	"errors"
 	"io"
@@ -115,7 +116,7 @@ func TestExistingCanaryIsNeverReadOrRemoved(t *testing.T) {
 }
 
 func TestManagedPolicyChecks(t *testing.T) {
-	for _, mode := range []string{"valid", "profiles", "managed-default", "configured-default", "missing-feature", "enabled-feature", "resolved-feature"} {
+	for _, mode := range []string{"valid", "custom", "profiles", "managed-default", "configured-default", "missing-feature", "enabled-feature", "resolved-feature"} {
 		t.Run(mode, func(t *testing.T) {
 			profiles := map[string]bool{"vm_dev": true}
 			managedDefault, configuredDefault := "vm_dev", "vm_dev"
@@ -123,7 +124,16 @@ func TestManagedPolicyChecks(t *testing.T) {
 			for _, key := range featureKeys {
 				features[key] = false
 			}
+			expected := codexpolicy.Requirements{Default: "vm_dev", Profiles: map[string]bool{"vm_dev": true}, Features: map[string]bool{}}
+			for _, key := range featureKeys {
+				expected.Features[key] = false
+			}
 			switch mode {
+			case "custom":
+				profiles = map[string]bool{"custom": true}
+				managedDefault, configuredDefault = "custom", "custom"
+				features = map[string]bool{"apps": true}
+				expected = codexpolicy.Requirements{Default: "custom", Profiles: profiles, Features: features}
 			case "profiles":
 				profiles["other"] = true
 			case "managed-default":
@@ -146,7 +156,7 @@ func TestManagedPolicyChecks(t *testing.T) {
 			featureOutput := ""
 			for _, key := range featureKeys {
 				value := "false"
-				if mode == "resolved-feature" && key == "apps" {
+				if (mode == "resolved-feature" || mode == "custom") && key == "apps" {
 					value = "true"
 				}
 				featureOutput += key + " stable " + value + "\n"
@@ -161,8 +171,8 @@ func TestManagedPolicyChecks(t *testing.T) {
 			}
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			var out bytes.Buffer
-			err = checkPolicy(&out)
-			if mode == "valid" {
+			err = checkSelectedPolicy(&out, expected)
+			if mode == "valid" || mode == "custom" {
 				if err != nil || !strings.Contains(out.String(), "PASS Codex") {
 					t.Fatalf("valid policy: %v: %s", err, out.String())
 				}

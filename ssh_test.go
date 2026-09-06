@@ -1,4 +1,4 @@
-package agentvm
+package devsandbox
 
 import (
 	"fmt"
@@ -19,41 +19,39 @@ func writeTestFile(t *testing.T, path, data string) {
 	}
 }
 
-func TestSSHInstallPreservesAndMigrates(t *testing.T) {
-	for _, header := range []string{sshHeader, legacySSHHeader} {
-		v := testVM(t, "install-ssh")
-		state := testState(t, v)
-		target := filepath.Join(v.home, ".ssh/agent-vms/test.config")
-		config := filepath.Join(v.home, ".ssh/config")
-		original := "Host personal\n  HostName example.invalid\n"
-		writeTestFile(t, target, header+"old alias")
-		writeTestFile(t, config, original)
-		for i := 0; i < 2; i++ {
-			if err := v.installSSH(state); err != nil {
-				t.Fatal(err)
-			}
+func TestSSHInstallPreservesAndUpdates(t *testing.T) {
+	v := testVM(t, "install-ssh")
+	state := testState(t, v)
+	target := filepath.Join(v.home, ".ssh/dev-sandbox/test.config")
+	config := filepath.Join(v.home, ".ssh/config")
+	original := "Host personal\n  HostName example.invalid\n"
+	writeTestFile(t, target, sshHeader+"old alias")
+	writeTestFile(t, config, original)
+	for i := 0; i < 2; i++ {
+		if err := v.installSSH(state); err != nil {
+			t.Fatal(err)
 		}
-		data, _ := os.ReadFile(target)
-		if string(data) != sshHeader+sshConfig(state) {
-			t.Fatalf("SSH entry not migrated: %s", data)
-		}
-		data, _ = os.ReadFile(config)
-		if string(data) != sshInclude+"\n\n"+original {
-			t.Fatalf("personal config changed: %s", data)
-		}
-		backups, _ := filepath.Glob(config + ".before-agent-vms-*")
-		if len(backups) != 1 {
-			t.Fatalf("backup count: %v", backups)
-		}
-		data, _ = os.ReadFile(backups[0])
-		if string(data) != original {
-			t.Fatal("backup changed")
-		}
-		for _, path := range []string{config, target, backups[0]} {
-			info, err := os.Stat(path)
-			if err != nil || info.Mode().Perm() != 0o600 {
-				t.Fatalf("file permissions: %s %v", path, err)
-			}
+	}
+	data, _ := os.ReadFile(target)
+	if string(data) != sshHeader+sshConfig(state) {
+		t.Fatalf("SSH entry not updated: %s", data)
+	}
+	data, _ = os.ReadFile(config)
+	if string(data) != sshInclude+"\n\n"+original {
+		t.Fatalf("personal config changed: %s", data)
+	}
+	backups, _ := filepath.Glob(config + ".before-dev-sandbox-*")
+	if len(backups) != 1 {
+		t.Fatalf("backup count: %v", backups)
+	}
+	data, _ = os.ReadFile(backups[0])
+	if string(data) != original {
+		t.Fatal("backup changed")
+	}
+	for _, path := range []string{config, target, backups[0]} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("file permissions: %s %v", path, err)
 		}
 	}
 }
@@ -63,7 +61,7 @@ func TestSSHInstallRefusesUnmanagedAndSymlinks(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			v := testVM(t, "install-ssh")
 			state := testState(t, v)
-			target := filepath.Join(v.home, ".ssh/agent-vms/test.config")
+			target := filepath.Join(v.home, ".ssh/dev-sandbox/test.config")
 			config := filepath.Join(v.home, ".ssh/config")
 			personal := filepath.Join(v.home, "personal")
 			writeTestFile(t, target, sshHeader+"old")

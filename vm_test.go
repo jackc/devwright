@@ -1,4 +1,4 @@
-package agentvm
+package devsandbox
 
 import (
 	"encoding/base64"
@@ -65,7 +65,7 @@ func TestEmbeddedRecipe(t *testing.T) {
 	if strings.Contains(script, "_B64__") {
 		t.Fatal("unresolved payload")
 	}
-	for _, path := range []string{"config/codex/requirements.toml", "config/codex/config.toml", "lima/dotfiles.sh", "guestbin/verify-linux-arm64.gz", "guestbin/verify-linux-amd64.gz"} {
+	for _, path := range []string{"config/codex/requirements.toml", "config/codex/config.toml", "lima/dotfiles.sh", "lima/credentials.sh", "guestbin/verify-linux-arm64.gz", "guestbin/verify-linux-amd64.gz"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -166,7 +166,7 @@ func TestConfigureLifecycle(t *testing.T) {
 		if len(calls) != 2 || calls[0].input != provision || !reflect.DeepEqual(calls[0].args, append(sshArgs(state, "root"), shellJoin([]string{"/bin/bash", "-s"}))) {
 			t.Fatalf("configure ordering: %+v", calls)
 		}
-		if !reflect.DeepEqual(calls[1].args, append(sshArgs(state, "dev"), shellJoin([]string{"/usr/local/share/agent-vm/verify"}))) {
+		if !reflect.DeepEqual(calls[1].args, append(sshArgs(state, "dev"), shellJoin([]string{"/usr/local/share/dev-sandbox/verify"}))) {
 			t.Fatalf("verify command: %v", calls[1].args)
 		}
 	}
@@ -272,27 +272,6 @@ func TestConfigurationRecheckedAfterStart(t *testing.T) {
 	}
 }
 
-func TestTokenOnlyOnStdin(t *testing.T) {
-	v := testVM(t, "set-token")
-	state := testState(t, v)
-	var calls []recordedCommand
-	v.run = recordingRunner(t, &state, &calls)
-	v.readToken = func() (string, error) { return "synthetic-token", nil }
-	if err := v.execute(); err != nil {
-		t.Fatal(err)
-	}
-	if len(calls) != 1 || calls[0].input != "synthetic-token\n" || strings.Contains(strings.Join(calls[0].args, " "), "synthetic-token") {
-		t.Fatalf("token transport: %+v", calls)
-	}
-	for _, token := range []string{"", "space token", "line\nbreak", "nul\x00byte"} {
-		calls = nil
-		v.readToken = func() (string, error) { return token, nil }
-		if err := v.execute(); err == nil || len(calls) != 0 {
-			t.Fatal("sent invalid token")
-		}
-	}
-}
-
 func TestDotfilesIndependentAndRepeatable(t *testing.T) {
 	script, _ := recipe.ReadFile("lima/dotfiles.sh")
 	setup := strings.Split(strings.Split(string(script), "<<'USER_SETUP'\n")[1], "\nUSER_SETUP")[0]
@@ -332,7 +311,7 @@ func TestDotfilesIndependentAndRepeatable(t *testing.T) {
 		cmd := exec.Command("git", "config", "--global", "--get-all", "credential.https://github.com.helper")
 		cmd.Env = env
 		output, err := cmd.Output()
-		if err != nil || string(output) != "\n!/usr/local/bin/gh auth git-credential\n" {
+		if err != nil || string(output) != "\n!/usr/bin/gh auth git-credential\n" {
 			t.Fatalf("Git helper: %s %v", output, err)
 		}
 	}

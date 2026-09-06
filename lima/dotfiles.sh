@@ -15,7 +15,7 @@ cd "$HOME"
 repository=$1
 installer=$2
 # Each account owns its checkout; root never executes dev's copy.
-dotfiles="$HOME/.local/share/agent-vm/dotfiles"
+dotfiles="$HOME/.local/share/dev-sandbox/dotfiles"
 if [ ! -e "$dotfiles" ]; then
   mkdir -p "$(dirname "$dotfiles")"
   git clone -- "$repository" "$dotfiles"
@@ -27,8 +27,8 @@ cd "$dotfiles"
 test -f "$installer"
 test -x "$installer"
 "./$installer"
-# Preserve the VM's GitHub HTTPS token helper after personal Git changes.
+# Preserve GitHub HTTPS authentication through the packaged gh after Git changes.
 git config --global --replace-all credential.https://github.com.helper ''
-git config --global --add credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'
+git config --global --add credential.https://github.com.helper '!/usr/bin/gh auth git-credential'
 USER_SETUP
 done

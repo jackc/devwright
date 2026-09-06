@@ -1,8 +1,8 @@
-// agent-vm-verify is installed in the guest; it needs no compiler or interpreter.
+// dev-sandbox-verify is installed in the guest; it needs no compiler or interpreter.
 package main
 
 import (
-	"agent-sandbox-config/internal/verification"
+	"dev-sandbox/internal/verification"
 	"fmt"
 	"os"
 )
@@ -15,7 +15,7 @@ func main() {
 	case len(os.Args) == 4 && os.Args[1] == "sandbox-probe":
 		err = verification.SandboxProbe(os.Args[2], os.Args[3], os.Stdout)
 	default:
-		err = fmt.Errorf("usage: agent-vm-verify [sandbox-probe CANARY SIBLING]")
+		err = fmt.Errorf("usage: dev-sandbox-verify [sandbox-probe CANARY SIBLING]")
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

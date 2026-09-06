@@ -1,4 +1,6 @@
-# Agent Sandbox Config
+# Dev Sandbox
+
+Isolated development environments for humans and coding agents.
 
 ## Development VMs and containers
 
@@ -11,7 +13,7 @@ Administration uses key-only SSH as `root`.
 Choose a backend: Lima **2.2+** and OpenSSH on macOS/Linux, or a local Incus
 server and OpenSSH (including `ssh-keygen`) on Linux. Lima remains the default;
 pass `--backend incus` on every Incus command. Incus requires no Lima installation.
-The `agent-vm` Go executable embeds the complete recipe and runs from any directory.
+The `dev-sandbox` Go executable embeds the complete recipe and runs from any directory.
 Users of a prebuilt executable need no Go compiler on the host or guest. The CLI
 embeds compiled Linux verifiers for arm64 and amd64 and installs the matching
 one inside the guest. Before operating on an instance,
@@ -34,7 +36,7 @@ mise trust
 mise install
 mise run build
 mkdir -p ~/.local/bin
-install -m 755 .build/agent-vm ~/.local/bin/agent-vm
+install -m 755 .build/dev-sandbox ~/.local/bin/dev-sandbox
 export PATH="$HOME/.local/bin:$PATH"  # also add this to your shell startup file
 ```
 
@@ -44,31 +46,31 @@ On macOS, install Lima with `brew install lima`. For other hosts, follow
 Maintainers can build precompiled release archives and a Homebrew formula using
 [the release process below](#development-and-releases). To install an archive,
 extract the one matching your OS (`darwin` for macOS, `linux` for Linux) and CPU
-(`arm64` for Apple Silicon/ARM, `amd64` for Intel/AMD), then install its `agent-vm`
+(`arm64` for Apple Silicon/ARM, `amd64` for Intel/AMD), then install its `dev-sandbox`
 executable into a directory on PATH. Verify its SHA-256 against the release's
 `checksums.txt`. Release publication and a Homebrew tap must be set up in the
 hosting repository; this source tree does not assume a particular GitHub owner.
 
 ```sh
-agent-vm --version
-agent-vm --help
-agent-vm create agent-dev  # installs and verifies the setup
-agent-vm install-ssh agent-dev
+dev-sandbox --version
+dev-sandbox --help
+dev-sandbox create dev  # installs and verifies the setup
+dev-sandbox install-ssh dev
 
-ssh lima-agent-dev           # dev: development, Codex, repositories
-ssh root@lima-agent-dev   # root: VM administration
+ssh lima-dev           # dev: development, Codex, repositories
+ssh root@lima-dev   # root: VM administration
 ```
 
 Create another isolated environment with the same recipe, optionally changing resources:
 
 ```sh
-agent-vm create another-dev --cpus 8 --memory 8GiB --disk 100GiB
-agent-vm install-ssh another-dev
+dev-sandbox create another-dev --cpus 8 --memory 8GiB --disk 100GiB
+dev-sandbox install-ssh another-dev
 ```
 
 Resource flags apply only to `create` and `render`; omitted values use 4 CPUs,
 4 GiB memory, and a 60 GiB sparse disk. Sizes accept positive whole numbers with
-`MiB`, `GiB`, or `TiB` units. `agent-vm render` prints the embedded Lima recipe
+`MiB`, `GiB`, or `TiB` units. `dev-sandbox render` prints the embedded Lima recipe
 without contacting Lima or SSH. Options can precede or follow the action/name.
 
 `create` refuses an existing name. The launcher checks that `dev` is the primary account
@@ -91,28 +93,27 @@ during initialization, or select existing ones with `--network` and `--storage`.
 The storage driver must support root disk size limits, for example Btrfs or ZFS.
 The directory driver on an ordinary ext4 filesystem cannot enforce container
 disk quotas. Host networking and storage setup are explicit administrative steps;
-`agent-vm` does not modify them.
+`dev-sandbox` does not modify them.
 
 ```sh
 # Hardware VM (requires working KVM and Incus's QEMU/firmware dependencies).
-agent-vm create agent-dev --backend incus
+dev-sandbox create dev --backend incus
 
 # Unprivileged system container (requires no hardware virtualization).
-agent-vm create agent-container --backend incus --container
+dev-sandbox create dev-container --backend incus --container
 
 # Optional resources, existing storage pool, and managed network.
-agent-vm create another-dev --backend incus --container \
+dev-sandbox create another-dev --backend incus --container \
   --cpus 8 --memory 8GiB --disk 100GiB --storage default --network incusbr0
 
-agent-vm install-ssh agent-dev --backend incus
-ssh incus-agent-dev
-ssh root@incus-agent-dev
-agent-vm verify agent-dev --backend incus
-agent-vm configure agent-dev --backend incus
-agent-vm set-token agent-dev --backend incus
+dev-sandbox install-ssh dev --backend incus
+ssh incus-dev
+ssh root@incus-dev
+dev-sandbox verify dev --backend incus
+dev-sandbox configure dev --backend incus
 
-incus --force-local --project default stop agent-dev
-incus --force-local --project default start agent-dev
+incus --force-local --project default stop dev
+incus --force-local --project default start dev
 ```
 
 All actions, including optional dotfiles, use the same guest setup and acceptance
@@ -134,7 +135,7 @@ and other unsupported settings before running guest commands. CPU/memory/disk
 changes should use Incus's own configuration tools.
 
 Each Incus instance gets a new host-side Ed25519 key under
-`~/.ssh/agent-vms/incus/NAME/`. Creation sends only its public key through Incus
+`~/.ssh/dev-sandbox/incus/NAME/`. Creation sends only its public key through Incus
 to initialize root and dev SSH. The SSH host key is obtained through the local
 Incus control plane and pinned in that directory's `known_hosts`. Provisioning,
 verification, and token transfer then use SSH, with agent forwarding disabled.
@@ -151,13 +152,13 @@ When Incus runs inside Lima, these aliases live inside the Lima host VM.
 If provisioning fails after SSH bootstrap, fix the cause and run `configure`.
 A failure before SSH bootstrap may require deleting the incomplete instance
 with Incus and creating it again. After deliberately deleting an instance, move
-its `~/.ssh/agent-vms/incus/NAME/` directory aside before reusing the name. The
+its `~/.ssh/dev-sandbox/incus/NAME/` directory aside before reusing the name. The
 launcher refuses to reuse an old instance's identity. It does not automatically
 delete failed instances, images, or host SSH state.
 
 To test nested Incus VMs on a Mac, create a separate Lima Linux host with
 `limactl start --nested-virt --mount-none --containerd=none --name=incus-host template:ubuntu-26.04`,
-install Incus and the Linux `agent-vm` executable there, and follow the commands
+install Incus and the Linux `dev-sandbox` executable there, and follow the commands
 above. Check `/dev/kvm` and an actual VM boot; the device alone does not prove
 the complete nested VM stack works. Use `--container` when nested VMs cannot boot.
 See [VALIDATION.md](VALIDATION.md) for the tested environment and results.
@@ -165,10 +166,10 @@ See [VALIDATION.md](VALIDATION.md) for the tested environment and results.
 ### Everyday use
 
 ```sh
-limactl start agent-dev
-ssh lima-agent-dev          # development as dev
-ssh root@lima-agent-dev  # administration
-limactl stop agent-dev
+limactl start dev
+ssh lima-dev          # development as dev
+ssh root@lima-dev  # administration
+limactl stop dev
 ```
 
 Lima manages starting, stopping, and deleting VMs. SSH provides interactive access;
@@ -182,25 +183,86 @@ included settings, overriding its single control socket per VM. Rerun
 `install-ssh` to update a previously installed entry.
 
 Restarting does not run our setup script or update Codex. Your VM's disk and
-installed settings persist. Use `agent-vm verify agent-dev` to recheck
+installed settings persist. Use `dev-sandbox verify dev` to recheck
 the restrictions without updating tools.
 
-### GitHub and Codex sign-in
+### Credentials and sign-in
 
-Supply a fine-grained GitHub token for each VM interactively from the host:
+Development credentials live in `/home/dev/.config/dev-sandbox/credentials.sh`,
+owned by `dev` with mode `0600`, inside a mode `0700` directory. Use shell-quoted
+`export` assignments so child processes inherit the values:
 
 ```sh
-agent-vm set-token agent-dev
+export GH_TOKEN='github_pat_REPLACE_ME'
+export OTHER_API_KEY='REPLACE_ME'
+export DATABASE_URL='postgresql://agent:REPLACE_ME@localhost/app'
 ```
 
-The prompt hides input. The token travels on SSH stdin and is stored with mode
-0600 in `/home/dev/.config/agent-vm/github-token`. It is never included in the
-recipe or passed as a process argument. `/usr/local/bin/gh` loads it for both
-interactive and noninteractive use; system Git configuration uses that helper
-for GitHub HTTPS. `dev` and its agents can read this token by design. An explicitly
-supplied `GH_TOKEN` takes precedence. No primary host credential is imported.
+Edit the file as `dev` with your preferred editor:
 
-Inside `ssh lima-agent-dev`:
+```sh
+ssh lima-dev  # or incus-dev
+vi ~/.config/dev-sandbox/credentials.sh
+```
+
+Root can populate the same file administratively, for example by running
+`sudo -u dev -H vi /home/dev/.config/dev-sandbox/credentials.sh`. Keep it owned by
+`dev` with mode `0600` if another editor or deployment tool replaces it.
+
+The recipe creates a commented template only when the file is absent and
+preserves its contents during `configure`. Every process running as `dev` can
+read these credentials by design. Other users receive no startup hook and cannot
+read the private file; root retains normal administrative access. Host
+credentials are not imported. There is no credential setter or per-command
+wrapper in the host CLI. Keep the credential file out of version control.
+
+After any optional dotfiles installer, configuration adds a small managed
+source block to `dev`'s `.profile`, `.bashrc`, and `.zshenv`, and to `.bash_profile`
+and `.bash_login` if those files already exist. It does not create the latter two,
+which would shadow other Bash login files. Hooks go before noninteractive early
+returns, preserving a leading shebang, existing content, and valid startup-file
+symlinks. Repeated configuration repairs or moves the block without duplicating
+it. Setup runs as `dev` and never sources the credential file as root.
+
+Bash's login files cover interactive SSH logins; `.bashrc` also covers ordinary
+Bash SSH remote commands. Zsh loads `.zshenv` for interactive and noninteractive
+invocations. Once the entry shell exports credentials, its descendants—including
+Git, `gh`, SDKs, scripts, and Codex—inherit them even if a child skips startup
+files. See [Bash startup rules](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files)
+and [Zsh startup rules](https://zsh.sourceforge.io/Doc/Release/Files.html).
+
+Keep the credential file to quiet, shell-compatible export assignments: it is
+sourced as shell code and may be read more than once per login. Single quotes
+preserve dollar signs, spaces, and most punctuation literally; a literal single
+quote needs shell escaping. It must not print output or require a terminal.
+
+If custom dotfiles select another `ZDOTDIR` before the home `.zshenv` runs, add
+the source block to that directory's `.zshenv` yourself. Rerun `configure` after
+replacing startup files or adding a new Bash login file. Other login shells need
+their own startup integration. Shells launched with
+startup files disabled and no inherited credentials, `incus exec`, cron, and
+independently started systemd services need their own environment setup. The
+recipe does not modify `/etc/environment`, PAM, or systemd environment settings.
+
+After changing values, open a fresh session and restart existing agents and
+remote runtimes. Existing processes retain their previous environment. For
+Codex desktop remote use, the runtime must start through `dev`'s configured SSH
+shell; reconnect/restart that runtime rather than only creating another task.
+The initial Codex config explicitly preserves the inherited environment:
+
+```toml
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = true
+```
+
+Existing and custom Codex configs are preserved, so check these settings and any
+explicit environment filters when upgrading. See the
+[Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference#shell_environment_policyignore_default_excludes).
+GitHub HTTPS uses the packaged `/usr/bin/gh auth git-credential`, which reads
+`GH_TOKEN` from its environment. Scope the token to repositories this VM needs.
+
+Inside `ssh lima-dev`:
 
 ```sh
 cd ~/projects
@@ -215,7 +277,7 @@ for your account, use the authentication flow supported by your Codex client.
 Set your Git author name/email as `dev` when needed, or use the optional
 dotfiles installer below. Provisioning does not copy host Git configuration.
 
-For the desktop, add **lima-agent-dev** as an SSH host in its remote connection
+For the desktop, add **lima-dev** as an SSH host in its remote connection
 settings, then select a guest directory under `/home/dev/projects`. Use the
 `dev` connection, not a connection with the username `root`. The app may
 install a separate remote runtime; verify its version and effective managed
@@ -225,27 +287,28 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 
 | File | Responsibility |
 | --- | --- |
-| `cli.go`, `vm.go`, `incus.go`, `process.go`, `terminal.go`, `ssh.go` | Host CLI, Lima/Incus orchestration, subprocesses, terminal input, and SSH configuration |
+| `cli.go`, `vm.go`, `incus.go`, `process.go`, `ssh.go` | Host CLI, Lima/Incus orchestration, subprocesses, and SSH configuration |
 | `assets.go` | Embeds the recipe at build time |
-| `lima/agent.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
+| `lima/dev-sandbox.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
 | `lima/bootstrap.sh` | Creation-only setup of key-based root SSH |
 | `incus/bootstrap.sh` | Creation-only SSH/account setup through Incus |
-| `lima/provision.sh` | Shared repeatable OS, account, SSH, GitHub helper, and Codex installation for both backends |
+| `lima/provision.sh` | Shared repeatable OS, account, SSH, development credential hooks, Git authentication, and Codex installation for both backends |
 | `lima/dotfiles.sh` | Optional per-account dotfiles installation for root and dev |
+| `lima/credentials.sh` | Private dev credential file and Bash/Zsh startup hooks |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
-| `internal/verification/`, `cmd/agent-vm-verify/` | Go Linux, Codex policy, and sandbox acceptance checks |
+| `internal/verification/`, `cmd/dev-sandbox-verify/` | Go Linux, Codex policy, and sandbox acceptance checks |
 | `scripts/build-guest.sh`, `guestbin/` | Build and embed the Linux guest verifiers |
 
 Install the updated executable, then apply its embedded recipe with `configure`.
 Configuration also updates Codex to the latest stable release. When developing
 the recipe, rebuild and reinstall after editing the shared source.
 The version installed during provisioning is recorded
-in `/usr/local/share/agent-vm/codex-version` for diagnostics; verification checks
+in `/usr/local/share/dev-sandbox/codex-version` for diagnostics; verification checks
 actual policy behavior rather than requiring that exact version:
 
 ```sh
-agent-vm configure agent-dev  # applies the recipe and verifies it
+dev-sandbox configure dev  # applies the recipe and verifies it
 ```
 
 During creation, Lima initially grants `dev` sudo. The creation-only bootstrap
@@ -256,24 +319,80 @@ on the host. The template's `passwordlessSudo: true` is only for this bootstrap;
 completed VMs deny sudo to `dev`.
 
 `configure` sends the current Bash setup script and embedded policy files
-directly over root SSH. Lima stores no setup script to replay on boot. Recipe
+directly over root SSH. Lima stores no setup script to replay on boot. Embedded recipe
 edits take effect only after rebuilding the executable and explicitly running
-`configure`. Updating the
+`configure`; the Codex file overrides below require no rebuild. Updating the
 executable alone does not modify existing VMs.
 
 `configure` applies setup to a running VM without rebooting it; if stopped, it
-starts the VM first. It installs the latest Codex, updates managed policy and
+starts the VM first. It installs the latest Codex, restores the selected managed policy and
 system settings, and runs the guest acceptance checks. It preserves `dev`'s
-personal Codex config, credentials, and projects. Use it while development tools
+personal Codex config unless explicitly replaced, plus credentials and projects. Use it while development tools
 are idle because it updates installed software and reloads SSH configuration.
+
+### Custom Codex policy and defaults
+
+The executable includes default Codex files. Supply explicit host file paths to
+replace either complete file; settings are not merged and project directories
+are not searched automatically. Both backends support these options:
+
+```sh
+dev-sandbox create my-dev \
+  --codex-requirements ./requirements.toml \
+  --codex-config ./config.toml
+
+# Select a different policy for an existing VM.
+dev-sandbox configure my-dev --codex-requirements ./requirements.toml
+
+# Explicitly replace an existing personal config.
+dev-sandbox configure my-dev --codex-config ./config.toml --replace-codex-config
+
+# Stop using a custom policy and restore the executable's embedded policy.
+dev-sandbox configure my-dev --reset-codex-requirements
+```
+
+Files are read and checked for valid TOML before contacting the instance manager.
+Codex validates its full configuration schema in the guest during verification;
+a schema error can therefore fail setup after the files have been installed.
+Correct the files and rerun `configure` with the override options.
+
+`--codex-requirements` installs `/etc/codex/requirements.toml` and saves a root-owned
+copy at `/usr/local/share/dev-sandbox/custom-requirements.toml`. Future `configure`
+runs restore that saved selection, even if the original host file is gone.
+Supplying a new file replaces the saved selection. `--reset-codex-requirements`
+removes it and restores the embedded policy. VMs without a custom selection get
+the current executable's embedded policy on every `configure`. Editing the host
+file or upgrading the executable does not update a VM until `configure` runs.
+
+`--codex-config` supplies `/home/dev/.codex/config.toml` only when absent.
+An existing file remains untouched unless `--replace-codex-config` is supplied
+with `--codex-config` on `configure`. This option overwrites the personal config;
+back it up first if needed. It does not alter credentials. The initial config
+is not saved as a persistent template. Keep the personal config compatible with
+the selected requirements: the embedded user config selects `vm_dev`, so a
+policy using another profile may also need a matching user config.
+
+These are operator-controlled overrides. Managed requirements remain root-owned;
+`dev` can change personal preferences but cannot use them to loosen managed
+requirements in supported Codex clients. Root dotfiles installers also have
+administrative access and should leave managed policy files to this mechanism.
+
+Verification always checks Linux isolation, policy ownership and checksum, and
+Codex's strict config loading. It compares the selected managed default, allowed
+profiles, and feature requirements with the app-server response and checks
+resolved feature enforcement. The embedded policy additionally gets the existing
+workspace-write and secret-read-denial sandbox probes. Custom policies report
+those behavior probes as **not tested**: arbitrary filesystem/network policies
+need their own acceptance tests. Successful verification does not certify a
+custom policy as equivalent to the embedded restrictions.
 
 ### Optional dotfiles
 
 Pass your own Git repository when creating or configuring a VM:
 
 ```sh
-agent-vm create my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git
-agent-vm configure my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git --dotfiles-install setup.sh
+dev-sandbox create my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git
+dev-sandbox configure my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git --dotfiles-install setup.sh
 ```
 
 No dotfiles are installed by default. The default installer is `install`; use
@@ -284,12 +403,14 @@ and SHELL. It is responsible for its dependencies, backups, startup files, and
 any shell preferences; the recipe does not assume Mise or Zsh.
 
 Both `root` and `dev` get independent checkouts at
-`~/.local/share/agent-vm/dotfiles`. The installer runs as each account, so it must
+`~/.local/share/dev-sandbox/dotfiles`. The installer runs as each account, so it must
 support `dev` without sudo. Only supply repositories you trust to run as root.
 The repository must be accessible from both guest accounts; host credentials
 and SSH agents are not forwarded. Public HTTPS repositories work without setup.
-GitHub HTTPS is configured to use the VM token helper after installation.
-Keep `/usr/local/bin` ahead of alternative Codex and `gh` installations in your
+GitHub HTTPS is configured to use the packaged `gh` credential helper after installation.
+The installer intentionally starts with a minimal environment, so credentials in
+`credentials.sh` are not loaded during dotfiles installation.
+Keep `/usr/local/bin` ahead of alternative Codex installations in your
 installer's PATH settings.
 
 Repeat the options on `configure` to update and rerun the installer. Updates use
@@ -300,43 +421,42 @@ alone and does not update or remove them.
 
 ### Configuration behavior
 
-Explicit provisioning restores policy, SSH settings, and `dev`'s empty
+Explicit provisioning restores the selected policy, SSH settings, and `dev`'s empty
 supplementary group list. Manual changes to those settings survive normal
 restarts but are overwritten by `configure`. Root's authorized keys are
 initialized once during creation and are not recopied from development files
 during configuration.
 If setup fails, fix the cause and rerun `configure`; restarting does not retry it.
-Full acceptance checks run during `create`, `configure`, and `verify`. Lima
+Applicable acceptance checks run during `create`, `configure`, and `verify`. Lima
 startup does not run our verification.
 
-Resource/image changes in `agent.json` apply to newly created VMs after rebuilding.
+Resource/image changes in `dev-sandbox.json` apply to newly created VMs after rebuilding.
 Use `--cpus`, `--memory`, and `--disk` for per-VM resource choices during creation.
 Change existing VM resources with Lima's own stopped-instance editing workflow. Run Ubuntu
 security upgrades administratively as needed; package installation is not a
 substitute for a guest patching policy.
 
 `install-ssh` adds an Include to `~/.ssh/config`, backs up that file before
-changing it, and stores a small SSH entry under `~/.ssh/agent-vms/`. The entry includes
+changing it, and stores a small SSH entry under `~/.ssh/dev-sandbox/`. The entry includes
 Lima's own SSH configuration and defaults to `dev`; `root@` overrides the user. It refuses
 to overwrite an unrelated generated-file target or rewrite a symlinked SSH
-config. Existing entries generated by the Ruby CLI are recognized and updated.
-`ssh-config` prints the entry instead if you manage SSH configuration
+config. `ssh-config` prints the entry instead if you manage SSH configuration
 through your own dotfiles tooling.
-Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user. Migrating VMs made
-with earlier recipes, including boot provisioning, is not supported.
+Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user.
 
 ### Isolation and validation limits
 
 * Plain mode disables host filesystem mounts, SSH-agent forwarding, automatic
   port forwarding, and bundled containerd. Use explicit SSH tunnels for previews,
-  for example `ssh -N -L 3000:127.0.0.1:3000 lima-agent-dev`.
-* Linux protects `/root` from `dev`; managed Codex policy additionally
+  for example `ssh -N -L 3000:127.0.0.1:3000 lima-dev`.
+* Linux protects `/root` from `dev`; the embedded managed Codex policy additionally
   denies common sensitive paths, permits workspace writes and direct networking,
   and disables apps, plugins, browser/computer use and configured MCP servers.
 * Ubuntu 26.04 supplies the bubblewrap AppArmor profile. No custom profile is
   installed; Ubuntu's global user-namespace restriction stays enabled, and Codex
   applies its own filesystem sandbox. Older Ubuntu releases are not supported.
-* The helper and policy files are root-owned. root SSH permits public-key authentication only;
+* Managed policy and installed tools are root-owned; development credentials and
+  startup hooks are dev-owned. root SSH permits public-key authentication only;
   do not expose an admin SSH connection or rootful Docker socket to agents.
 * Anyone running as `dev` can modify that account's startup files, tools, and
   project code. Do not run such files as `root`. Guest policy controls
@@ -356,19 +476,23 @@ See [VALIDATION.md](VALIDATION.md) for the actual VM test results and research p
 
 ### Development and releases
 
-The host CLI uses Go's standard library plus `golang.org/x/term` and
-`golang.org/x/sys` for hidden, interruptible token entry. Versions and checksums
-are recorded in `go.mod` and `go.sum`. The build toolchain is pinned in
-`mise.toml`, which local development and GitHub Actions both use; `go.mod`
-records the minimum supported Go version. Guest
-verification and terminal regression tests are also written in Go. Builds use
-Bash and gzip; tests use Git, Bash, and OpenSSH locally, with synthetic
-data and temporary directories. Terminal regressions open temporary pseudo-terminals;
-they need `/dev/tty` access when run inside a filesystem sandbox.
+The host CLI uses `go-toml/v2` to parse custom configuration; the Linux verifier
+uses `golang.org/x/sys` for filesystem access checks. Versions and checksums are
+recorded in `go.mod` and `go.sum`. The build toolchain is pinned in `mise.toml`,
+which local development and GitHub Actions both use; `go.mod` records the minimum
+supported Go version. Builds use Bash and gzip; tests use Go, Git, Bash, and
+OpenSSH with synthetic data and temporary directories.
+
+`tests/environment-linux.sh` additionally checks credential loading on Ubuntu
+26.04 with Bash/Zsh interactive and noninteractive SSH, inherited child
+environments, the packaged `gh`, and isolation from root and another user. Run it as root in a test VM:
+`bash tests/environment-linux.sh lima/provision.sh`. It uses private mount,
+network, and PID namespaces, so real credentials, accounts, and SSH configuration
+are not changed. It requires the recipe's packages, `ip`, `unshare`, and overlayfs.
 
 ```sh
-mise run check                         # Go tests/vet, verifier and terminal tests, Bash syntax
-mise run build                         # .build/agent-vm, recipe and guest verifiers embedded
+mise run check                         # Go tests/vet, verifier tests, Bash syntax
+mise run build                         # .build/dev-sandbox, recipe and guest verifiers embedded
 mise exec -- go test -race ./...
 mise run release v0.1.0                 # four OS/CPU archives and checksums
 # Supply the actual hosting repository to also generate a Homebrew formula:
@@ -392,7 +516,6 @@ are ignored by Git. Releases rebuild them before embedding them in each host bin
 Provisioning selects the guest architecture with `uname -m`; it installs no Ruby
 or Go runtime. Existing environments need one `configure` run with the rebuilt
 CLI before using its `verify` command, which now invokes the compiled verifier.
-Configuration removes old Ruby/Python verifier files but leaves installed packages alone.
 
 Release files are written to `.build/releases/VERSION/`. Archives contain the
 executable, documentation, and dependency license notices. `CGO_ENABLED=0` keeps
@@ -404,8 +527,8 @@ virtualization setup.
 GitHub Actions runs checks on macOS and Linux. Pushing a `vX.Y.Z` tag runs checks,
 builds the four archives and Homebrew formula using the hosting repository's name,
 and creates a **draft** GitHub release. Review and publish the draft, then copy
-its generated `agent-vm.rb` into `Formula/agent-vm.rb` in your Homebrew tap. Users
-can then install with `brew install OWNER/TAP/agent-vm`; the formula depends on
+its generated `dev-sandbox.rb` into `Formula/dev-sandbox.rb` in your Homebrew tap. Users
+can then install with `brew install OWNER/TAP/dev-sandbox`; the formula depends on
 Lima on macOS; install your chosen backend separately on Linux. Replace OWNER/TAP with the actual tap name. No public release or tap is
 created by a local build.
 

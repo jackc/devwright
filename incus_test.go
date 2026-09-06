@@ -1,4 +1,4 @@
-package agentvm
+package devsandbox
 
 import (
 	"bytes"
@@ -129,7 +129,7 @@ func TestIncusPreflightDoesNotRequireLima(t *testing.T) {
 
 func TestIncusRejectsUnsafeResolvedConfiguration(t *testing.T) {
 	for name, change := range map[string]func(*incusInstance){
-		"unmanaged":         func(s *incusInstance) { delete(s.ExpandedConfig, "user.agent-vm") },
+		"unmanaged":         func(s *incusInstance) { delete(s.ExpandedConfig, "user.dev-sandbox") },
 		"profiles":          func(s *incusInstance) { s.Profiles = []string{"default"} },
 		"privileged":        func(s *incusInstance) { s.ExpandedConfig["security.privileged"] = "true" },
 		"idmap":             func(s *incusInstance) { delete(s.ExpandedConfig, "security.idmap.isolated") },
@@ -250,16 +250,7 @@ func TestIncusConfigureAndTokenTransport(t *testing.T) {
 			t.Fatal("configure replaced SSH keys")
 		}
 	}
-	v.action = "set-token"
-	v.readToken = func() (string, error) { return "synthetic-token", nil }
-	calls = nil
-	if err := v.execute(); err != nil {
-		t.Fatal(err)
-	}
-	last := calls[len(calls)-1]
-	if last.args[0] != "ssh" || last.input != "synthetic-token\n" || strings.Contains(strings.Join(last.args, " "), "synthetic-token") {
-		t.Fatal("token was not sent exclusively through SSH stdin")
-	}
+
 }
 
 func TestIncusRechecksAfterStart(t *testing.T) {
@@ -308,7 +299,7 @@ func TestIncusSSHConfigurationAndLimaCoexist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	limaPath := filepath.Join(v.home, ".ssh", "agent-vms", "incus-test.config")
+	limaPath := filepath.Join(v.home, ".ssh", "dev-sandbox", "incus-test.config")
 	writeTestFile(t, limaPath, "personal Lima entry")
 	if err := v.installSSH(state); err != nil {
 		t.Fatal(err)

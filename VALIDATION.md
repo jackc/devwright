@@ -1,5 +1,65 @@
 # Lima, Incus, and Codex validation
 
+## Dev Sandbox naming and packaging
+
+Tested September 6, 2026 on macOS arm64. The executable and Go module are
+`dev-sandbox`, with `cmd/dev-sandbox` and `cmd/dev-sandbox-verify` entry points.
+Generated guest configuration, SSH state, credential paths, and release assets
+use the same name. The default environment name is `dev`. The shell-script
+credential format and loading behavior are unchanged; old-version migration
+handling has been removed.
+
+- `mise run check` passed, including Go tests, build, vet, and Bash syntax checks.
+- The built CLI rendered Lima, Incus VM, and Incus container configurations from
+  outside the checkout. Version/help output used the new name.
+- `mise run release v0.0.0-rename-check example/dev-sandbox` built all four host
+  archives locally. Archive contents, SHA-256 checksums, and the `DevSandbox`
+  Homebrew formula were checked; Ruby reported valid syntax. The repository
+  argument was a test placeholder. Nothing was published.
+- The isolated Ubuntu credential tests below passed again with
+  `~/.config/dev-sandbox/credentials.sh` and the renamed startup markers.
+
+## Private development credentials
+
+Tested September 6, 2026 on macOS arm64 and Ubuntu 26.04 arm64. Credentials now
+live in `dev`'s private `~/.config/dev-sandbox/credentials.sh`, sourced by that
+account's Bash/Zsh startup files. This replaces the interim `/etc/environment`
+design and the older GitHub-only wrapper/`set-token` command. The terminal
+implementation and PTY tests mentioned in historical sections below are removed.
+
+- `mise run check` passed: Go tests, build, vet, and Bash syntax checks.
+- `tests/environment-linux.sh` passed in private mount, network, and PID
+  namespaces in an existing Ubuntu VM. It runs the actual credential setup
+  script as a synthetic `dev` account and starts an isolated SSH listener.
+  Temporary Ubuntu gh/Zsh packages were extracted into a private overlay because
+  the test VM did not have the recipe's packages installed.
+- Repeated setup preserved the credential values and enforced `dev:dev` mode
+  `0600`. The containing directory is `0700`; another user could not read the
+  file. The system environment file's contents, ownership, and mode were unchanged.
+- Bash and Zsh interactive SSH logins and noninteractive SSH commands received
+  synthetic credentials, including a database URL, spaces, dollar signs, quotes,
+  and backslashes. Child shells, including a Bash process using
+  `--noprofile --norc`, inherited the same values. The packaged
+  `gh auth git-credential` returned the synthetic token without a wrapper or
+  network authentication.
+- Root and a second non-root SSH account did not receive any of the development
+  credential variables. Setup itself did not source the credential file.
+- Hooks preceded Bash's noninteractive early return, preserved startup symlinks
+  and existing content, covered existing `.bash_profile`/`.bash_login`, and were
+  repaired without duplicates after dotfiles changes. Those login files were
+  not created when absent. A malformed managed block left the original intact.
+
+No real credential values were read or printed, and the VM's real accounts,
+startup files, SSH configuration, environment, and installed packages were not
+changed. Full fresh-VM provisioning, Incus acceptance, authenticated Codex/model
+execution, and the desktop's actual remote-runtime launcher were not rerun.
+The tests establish shell startup and inherited process environments; existing
+Codex configs must retain compatible environment settings. Independently started
+services need explicit setup. See the README for setup and restart details.
+
+The sections below record earlier implementations using their original names
+and commands. They are historical results, not current setup instructions.
+
 ## Go verification and terminal test port
 
 Tested September 6, 2026 on macOS arm64. The guest acceptance checks and their

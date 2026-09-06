@@ -1,4 +1,4 @@
-package agentvm
+package devsandbox
 
 import (
 	"context"
@@ -14,9 +14,9 @@ import (
 	"strings"
 )
 
-const usage = `Usage: agent-vm ACTION [NAME] [OPTIONS]
-Actions: render, create, configure, verify, ssh-config, install-ssh, set-token
-Default VM: agent-dev
+const usage = `Usage: dev-sandbox ACTION [NAME] [OPTIONS]
+Actions: render, create, configure, verify, ssh-config, install-ssh
+Default environment: dev
 
 Options (may appear before or after the action):
   --backend lima|incus    Instance manager (default: lima)
@@ -25,6 +25,10 @@ Options (may appear before or after the action):
   --storage NAME          Incus storage pool (default: default; create/render)
   --dotfiles-repo URL      Install this Git repository for root and dev (create/configure)
   --dotfiles-install PATH  Installer relative to the repository (default: install)
+  --codex-requirements FILE  Use and remember a custom managed policy (create/configure)
+  --reset-codex-requirements Restore the embedded managed policy (configure)
+  --codex-config FILE      Initial dev config; existing config is preserved (create/configure)
+  --replace-codex-config   Replace existing dev config with --codex-config (configure)
   --cpus N                CPUs for a new VM (default: 4; create/render only)
   --memory SIZE           Memory for a new VM, e.g. 8GiB (default: 4GiB; create/render only)
   --disk SIZE             Disk for a new VM, e.g. 100GiB (default: 60GiB; create/render only)
@@ -36,6 +40,9 @@ Incus uses the local server's default project. Repeat --backend incus on every a
 `
 
 type options struct {
+	codexRequirements, codexConfig                            string
+	resetCodexRequirements, replaceCodexConfig                bool
+	requirementsPayload, configPayload                        []byte
 	action, name, dotfilesRepo, dotfilesInstall, memory, disk string
 	cpus                                                      int
 	backend, network, storage                                 string
@@ -48,8 +55,8 @@ var validName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 var validSize = regexp.MustCompile(`^[1-9][0-9]*(MiB|GiB|TiB)$`)
 
 func parseOptions(args []string) (options, error) {
-	o := options{name: "agent-dev", set: map[string]bool{}}
-	f := flag.NewFlagSet("agent-vm", flag.ContinueOnError)
+	o := options{name: "dev", set: map[string]bool{}}
+	f := flag.NewFlagSet("dev-sandbox", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
 	f.BoolVar(&o.help, "help", false, "")
 	f.BoolVar(&o.help, "h", false, "")
@@ -60,6 +67,10 @@ func parseOptions(args []string) (options, error) {
 	f.StringVar(&o.storage, "storage", "default", "")
 	f.StringVar(&o.dotfilesRepo, "dotfiles-repo", "", "")
 	f.StringVar(&o.dotfilesInstall, "dotfiles-install", "install", "")
+	f.StringVar(&o.codexRequirements, "codex-requirements", "", "")
+	f.StringVar(&o.codexConfig, "codex-config", "", "")
+	f.BoolVar(&o.resetCodexRequirements, "reset-codex-requirements", false, "")
+	f.BoolVar(&o.replaceCodexConfig, "replace-codex-config", false, "")
 	f.IntVar(&o.cpus, "cpus", 0, "")
 	f.StringVar(&o.memory, "memory", "", "")
 	f.StringVar(&o.disk, "disk", "", "")
@@ -101,7 +112,7 @@ func parseOptions(args []string) (options, error) {
 		o.name = positional[1]
 	}
 	switch o.action {
-	case "render", "create", "configure", "verify", "ssh-config", "install-ssh", "set-token":
+	case "render", "create", "configure", "verify", "ssh-config", "install-ssh":
 	default:
 		return o, fmt.Errorf("unknown action: %s; use --help", o.action)
 	}
@@ -118,6 +129,25 @@ func parseOptions(args []string) (options, error) {
 	}
 	if !validIncusResource.MatchString(o.network) || !validIncusResource.MatchString(o.storage) {
 		return o, errors.New("expected a simple Incus network or storage pool name")
+	}
+	for _, key := range []string{"codex-requirements", "codex-config", "reset-codex-requirements", "replace-codex-config"} {
+		if o.set[key] && o.action != "create" && o.action != "configure" {
+			return o, fmt.Errorf("--%s applies only to create and configure", key)
+		}
+	}
+	if (o.resetCodexRequirements || o.replaceCodexConfig) && o.action != "configure" {
+		return o, errors.New("reset/replace Codex options apply only to configure")
+	}
+	if o.resetCodexRequirements && o.set["codex-requirements"] {
+		return o, errors.New("--reset-codex-requirements conflicts with --codex-requirements")
+	}
+	if o.replaceCodexConfig && !o.set["codex-config"] {
+		return o, errors.New("--replace-codex-config requires --codex-config")
+	}
+	for key, path := range map[string]string{"codex-requirements": o.codexRequirements, "codex-config": o.codexConfig} {
+		if o.set[key] && path == "" {
+			return o, fmt.Errorf("--%s requires a file path", key)
+		}
 	}
 	if o.set["dotfiles-install"] && !o.set["dotfiles-repo"] {
 		return o, errors.New("--dotfiles-install requires --dotfiles-repo")
@@ -165,7 +195,10 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 		return err
 	}
 	if o.version {
-		_, err = fmt.Fprintf(stdout, "agent-vm %s\n", version)
+		_, err = fmt.Fprintf(stdout, "dev-sandbox %s\n", version)
+		return err
+	}
+	if err := o.loadCodexFiles(); err != nil {
 		return err
 	}
 	home, err := os.UserHomeDir()
@@ -173,8 +206,7 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 		return err
 	}
 	v := vm{options: o, ctx: ctx, home: home, out: stdout, run: commandRunner(ctx, stdin, stdout, stderr),
-		withContext: func(ctx context.Context) runner { return commandRunner(ctx, stdin, stdout, stderr) },
-		readToken:   func() (string, error) { return readToken(ctx) }}
+		withContext: func(ctx context.Context) runner { return commandRunner(ctx, stdin, stdout, stderr) }}
 	if o.action != "render" {
 		check := preflight
 		if o.backend == "incus" {
@@ -191,7 +223,7 @@ var limaVersion = regexp.MustCompile(`(?m)^limactl version v?([0-9]+)\.([0-9]+)\
 
 func preflight(run runner, lookPath func(string) (string, error), goos string) error {
 	if goos != "darwin" && goos != "linux" {
-		return errors.New("agent-vm supports macOS and Linux hosts")
+		return errors.New("dev-sandbox supports macOS and Linux hosts")
 	}
 	for _, name := range []string{"limactl", "ssh"} {
 		if _, err := lookPath(name); err != nil {

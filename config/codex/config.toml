@@ -2,5 +2,9 @@
 default_permissions = "vm_dev"
 approval_policy = "on-request"
 
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = true
+
 [apps._default]
 enabled = false

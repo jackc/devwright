@@ -21,27 +21,27 @@ mkdir -p "$staging/licenses"
 cp README.md VALIDATION.md "$staging/"
 go mod download
 bash scripts/build-guest.sh
-for dependency in term sys; do
-  module_dir=$(go list -m -f '{{.Dir}}' "golang.org/x/$dependency")
-  cp "$module_dir/LICENSE" "$staging/licenses/golang-x-$dependency.txt"
-done
+module_dir=$(go list -m -f '{{.Dir}}' golang.org/x/sys)
+cp "$module_dir/LICENSE" "$staging/licenses/golang-x-sys.txt"
+module_dir=$("${GO:-go}" list -m -f '{{.Dir}}' github.com/pelletier/go-toml/v2)
+cp "$module_dir/LICENSE" "$staging/licenses/go-toml.txt"
 for platform in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
   goos=${platform%_*}
   arch=${platform#*_}
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$arch" go build -trimpath \
-    -ldflags "-s -w -X main.version=$version" -o "$staging/agent-vm" ./cmd/agent-vm
-  COPYFILE_DISABLE=1 tar --format=ustar -czf "$dist/agent-vm_${version}_${platform}.tar.gz" \
-    -C "$staging" agent-vm README.md VALIDATION.md licenses
+    -ldflags "-s -w -X main.version=$version" -o "$staging/dev-sandbox" ./cmd/dev-sandbox
+  COPYFILE_DISABLE=1 tar --format=ustar -czf "$dist/dev-sandbox_${version}_${platform}.tar.gz" \
+    -C "$staging" dev-sandbox README.md VALIDATION.md licenses
 done
 (
   cd "$dist"
-  shasum -a 256 agent-vm_*.tar.gz > checksums.txt
+  shasum -a 256 dev-sandbox_*.tar.gz > checksums.txt
 )
 if [[ -n "$repository" ]]; then
-  checksum() { shasum -a 256 "$dist/agent-vm_${version}_$1.tar.gz" | cut -d ' ' -f 1; }
+  checksum() { shasum -a 256 "$dist/dev-sandbox_${version}_$1.tar.gz" | cut -d ' ' -f 1; }
   base="https://github.com/$repository/releases/download/$version"
-  cat > "$dist/agent-vm.rb" <<FORMULA
-class AgentVm < Formula
+  cat > "$dist/dev-sandbox.rb" <<FORMULA
+class DevSandbox < Formula
   desc "Provision Lima or Incus development environments"
   homepage "https://github.com/$repository"
   version "${version#v}"
@@ -49,33 +49,33 @@ class AgentVm < Formula
   on_macos do
     depends_on "lima"
     on_arm do
-      url "$base/agent-vm_${version}_darwin_arm64.tar.gz"
+      url "$base/dev-sandbox_${version}_darwin_arm64.tar.gz"
       sha256 "$(checksum darwin_arm64)"
     end
     on_intel do
-      url "$base/agent-vm_${version}_darwin_amd64.tar.gz"
+      url "$base/dev-sandbox_${version}_darwin_amd64.tar.gz"
       sha256 "$(checksum darwin_amd64)"
     end
   end
   on_linux do
     on_arm do
-      url "$base/agent-vm_${version}_linux_arm64.tar.gz"
+      url "$base/dev-sandbox_${version}_linux_arm64.tar.gz"
       sha256 "$(checksum linux_arm64)"
     end
     on_intel do
-      url "$base/agent-vm_${version}_linux_amd64.tar.gz"
+      url "$base/dev-sandbox_${version}_linux_amd64.tar.gz"
       sha256 "$(checksum linux_amd64)"
     end
   end
 
   def install
-    bin.install "agent-vm"
+    bin.install "dev-sandbox"
     doc.install "README.md", "VALIDATION.md", "licenses"
   end
 
   test do
-    assert_match "agent-vm $version", shell_output("#{bin}/agent-vm --version")
-    assert_equal true, JSON.parse(shell_output("#{bin}/agent-vm render"))["plain"]
+    assert_match "dev-sandbox $version", shell_output("#{bin}/dev-sandbox --version")
+    assert_equal true, JSON.parse(shell_output("#{bin}/dev-sandbox render"))["plain"]
   end
 end
 FORMULA

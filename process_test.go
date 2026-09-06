@@ -1,4 +1,4 @@
-package agentvm
+package devsandbox
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 
 // Launch this test binary as a real child, without depending on host Ruby.
 func TestProcessHelper(t *testing.T) {
-	if os.Getenv("AGENT_VM_PROCESS_HELPER") != "1" {
+	if os.Getenv("DEV_SANDBOX_PROCESS_HELPER") != "1" {
 		return
 	}
 	args := os.Args
@@ -43,7 +43,7 @@ func TestProcessHelper(t *testing.T) {
 }
 
 func TestSubprocessSafety(t *testing.T) {
-	t.Setenv("AGENT_VM_PROCESS_HELPER", "1")
+	t.Setenv("DEV_SANDBOX_PROCESS_HELPER", "1")
 	for _, key := range []string{"SSH_AUTH_SOCK", "GH_TOKEN", "GITHUB_TOKEN", "OPENAI_API_KEY"} {
 		t.Setenv(key, "synthetic-token")
 	}

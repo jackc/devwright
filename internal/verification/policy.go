@@ -3,6 +3,7 @@ package verification
 import (
 	"bufio"
 	"context"
+	"dev-sandbox/internal/codexpolicy"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,10 +87,17 @@ func (c *client) request(ctx context.Context, method string, params any, id int,
 	}
 }
 
-func checkPolicy(out io.Writer) error {
+func checkSelectedPolicy(out io.Writer, expected codexpolicy.Requirements) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := command(ctx, "codex", "app-server", "--stdio", "--strict-config", "-c", "features.apps=true", "-c", "features.plugins=true")
+	overrides := []string{}
+	for key, value := range expected.Features {
+		if !value {
+			overrides = append(overrides, "-c", "features."+key+"=true")
+		}
+	}
+	args := append([]string{"codex", "app-server", "--stdio", "--strict-config"}, overrides...)
+	cmd := command(ctx, args...)
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -111,7 +119,7 @@ func checkPolicy(out io.Writer) error {
 		return c.request(deadline, method, params, id, result)
 	}
 	var init any
-	if err := request("initialize", map[string]any{"clientInfo": map[string]string{"name": "agent_vm_verify", "version": "1.0"}, "capabilities": map[string]bool{"experimentalApi": true}}, 1, &init); err != nil {
+	if err := request("initialize", map[string]any{"clientInfo": map[string]string{"name": "dev_sandbox_verify", "version": "1.0"}, "capabilities": map[string]bool{"experimentalApi": true}}, 1, &init); err != nil {
 		return err
 	}
 	if err := c.send(map[string]string{"method": "initialized"}); err != nil {
@@ -135,24 +143,24 @@ func checkPolicy(out io.Writer) error {
 	if err := request("config/read", map[string]bool{"includeLayers": false}, 3, &config); err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(req.Requirements.Profiles, map[string]bool{"vm_dev": true}) {
+	if !reflect.DeepEqual(req.Requirements.Profiles, expected.Profiles) {
 		return errors.New("Unexpected managed profiles")
 	}
-	if req.Requirements.Default != "vm_dev" {
+	if req.Requirements.Default != expected.Default {
 		return errors.New("Unexpected managed default")
 	}
-	if config.Config.Default != "vm_dev" {
+	if expected.Default != "" && config.Config.Default != expected.Default {
 		return errors.New("Unexpected configured default")
 	}
-	for _, key := range featureKeys {
-		if value := req.Requirements.Features[key]; value == nil || *value {
+	for key, want := range expected.Features {
+		if value := req.Requirements.Features[key]; value == nil || *value != want {
 			return errors.New("Missing managed feature restrictions")
 		}
 	}
 	stop(cmd)
 	featureCtx, done := context.WithTimeout(ctx, 20*time.Second)
 	defer done()
-	stdout, stderr, err := run(featureCtx, "codex", "-c", "features.apps=true", "-c", "features.plugins=true", "features", "list")
+	stdout, stderr, err := run(featureCtx, append(append([]string{"codex"}, overrides...), "features", "list")...)
 	if err != nil {
 		return fmt.Errorf("features list: %w: %s", err, stderr)
 	}
@@ -163,11 +171,11 @@ func checkPolicy(out io.Writer) error {
 			features[fields[0]] = fields[len(fields)-1]
 		}
 	}
-	for _, key := range featureKeys {
-		if features[key] != "false" {
+	for key, want := range expected.Features {
+		if features[key] != fmt.Sprint(want) {
 			return errors.New("Managed feature pin was not enforced")
 		}
 	}
-	fmt.Fprintln(out, "PASS Codex app-server reads managed profile; resolved features reject apps/plugins overrides")
+	fmt.Fprintln(out, "PASS Codex app-server reads selected managed defaults/profiles/features; resolved feature requirements are enforced")
 	return nil
 }

@@ -1,7 +1,9 @@
 package verification
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"dev-sandbox/internal/codexpolicy"
 	"errors"
 	"fmt"
 	"io"
@@ -46,7 +48,7 @@ func Check(out io.Writer) error {
 	if _, err := os.ReadDir("/root"); !errors.Is(err, os.ErrPermission) {
 		return fmt.Errorf("Administrator home access did not fail with permission denial: %v", err)
 	}
-	for _, path := range []string{"/etc/codex", "/etc/codex/requirements.toml", "/usr/local/bin", "/usr/local/share/agent-vm"} {
+	for _, path := range []string{"/etc/codex", "/etc/codex/requirements.toml", "/usr/local/bin", "/usr/local/share/dev-sandbox"} {
 		info, err := os.Stat(path)
 		if err != nil {
 			return err
@@ -54,6 +56,17 @@ func Check(out io.Writer) error {
 		if info.Sys().(*syscall.Stat_t).Uid != 0 || unix.Access(path, unix.W_OK) == nil {
 			return fmt.Errorf("Writable policy/tool path: %s", path)
 		}
+	}
+	// Check ownership and permissions without reading credential values.
+	credentials := filepath.Join(dev.HomeDir, ".config/dev-sandbox/credentials.sh")
+	info, err := os.Stat(credentials)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 ||
+		int(info.Sys().(*syscall.Stat_t).Uid) != os.Geteuid() ||
+		unix.Access(credentials, unix.R_OK|unix.W_OK) != nil {
+		return errors.New("Expected dev-owned ~/.config/dev-sandbox/credentials.sh with mode 0600")
 	}
 	mounts, err := os.ReadFile("/proc/mounts")
 	if err != nil {
@@ -72,7 +85,7 @@ func Check(out io.Writer) error {
 	if unix.Access("/var/run/docker.sock", unix.R_OK|unix.W_OK) == nil {
 		return errors.New("Docker socket accessible")
 	}
-	expected, err := os.ReadFile("/usr/local/share/agent-vm/requirements.sha256")
+	expected, err := os.ReadFile("/usr/local/share/dev-sandbox/requirements.sha256")
 	if err != nil {
 		return err
 	}
@@ -90,17 +103,29 @@ func Check(out io.Writer) error {
 	}
 	fmt.Fprintf(out, "Codex installed: %s\n", strings.TrimSpace(stdout))
 	fmt.Fprintln(out, "PASS Linux account, policy ownership, mounts, SSH forwarding, and Codex installation")
-	if err := checkPolicy(out); err != nil {
+	selected, err := codexpolicy.Parse(policy)
+	if err != nil {
+		return fmt.Errorf("managed requirements: %w", err)
+	}
+	if err := checkSelectedPolicy(out, selected); err != nil {
 		return err
 	}
-	if err := sandboxCheck(dev.HomeDir, out); err != nil {
+	bundled, err := os.ReadFile("/usr/local/share/dev-sandbox/default-requirements.toml")
+	if err != nil {
 		return err
+	}
+	if bytes.Equal(policy, bundled) {
+		if err := sandboxCheck(dev.HomeDir, out); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(out, "NOT TESTED: custom policy filesystem/network behavior; bundled workspace/secret-denial probes apply only to the embedded policy")
 	}
 	fmt.Fprintln(out, "NOT TESTED: authenticated model run, private GitHub repository scope, desktop-provided tool inventory")
 	return nil
 }
 
-const canaryText = "agent-vm-synthetic-canary\n"
+const canaryText = "dev-sandbox-synthetic-canary\n"
 
 func sandboxCheck(home string, out io.Writer) error {
 	canary := filepath.Join(home, ".pgpass")
