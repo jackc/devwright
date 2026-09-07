@@ -97,6 +97,22 @@ install_user_config() {
 install_managed_policy "$codex_policy_mode" requirements toml /etc/codex/requirements.toml \
   '__DEFAULT_REQUIREMENTS_B64__' '__REQUIREMENTS_B64__'
 install_user_config "$replace_codex_config" '__CONFIG_B64__' /home/dev/.codex/config.toml
+# Retire the old embedded profile without replacing unrelated personal settings.
+# Custom managed policies may still define vm_dev and keep their selection.
+if [ ! -f "$policy_dir/custom-requirements.toml" ]; then
+  config=/home/dev/.codex/config.toml
+  tmp=$(mktemp "$policy_dir/config-migration.XXXXXX")
+  sed -E "/^[[:space:]]*\\[/,\$! s/^([[:space:]]*default_permissions[[:space:]]*=[[:space:]]*)[\"']vm_dev[\"']/\\1\":workspace\"/" "$config" > "$tmp"
+  if ! cmp -s "$config" "$tmp"; then
+    backup=$(mktemp "$policy_dir/config-before-profile-migration.XXXXXX")
+    cp -p "$config" "$backup"
+    chown dev:dev "$tmp"
+    chmod 600 "$tmp"
+    mv -fT "$tmp" "$config"
+  else
+    rm -f "$tmp"
+  fi
+fi
 # END CODEX FILES
 
 # BEGIN CLAUDE FILES
@@ -107,6 +123,20 @@ install_managed_policy "$claude_policy_mode" managed-settings json /etc/claude-c
 # recipe installs neither, and configure removes any left behind.
 rm -rf /etc/claude-code/managed-settings.d /etc/claude-code/managed-mcp.json
 install_user_config "$replace_claude_config" '__CLAUDE_CONFIG_B64__' /home/dev/.claude/settings.json
+# The old starter file relied on managed sandbox.enabled. Preserve that
+# behavior as a user preference when retiring the embedded sandbox lock.
+# Only migrate the unchanged starter; custom preferences remain untouched.
+if [ ! -f "$policy_dir/custom-managed-settings.json" ] &&
+  jq -e '. == {sandbox: {autoAllowBashIfSandboxed: true}}' /home/dev/.claude/settings.json >/dev/null; then
+  config=/home/dev/.claude/settings.json
+  backup=$(mktemp "$policy_dir/claude-before-permission-migration.XXXXXX")
+  cp -p "$config" "$backup"
+  tmp=$(mktemp "$policy_dir/claude-settings-migration.XXXXXX")
+  jq '.sandbox.enabled = true' "$config" > "$tmp"
+  chown dev:dev "$tmp"
+  chmod 600 "$tmp"
+  mv -fT "$tmp" "$config"
+fi
 # END CLAUDE FILES
 
 # Keep the standalone package root-owned and accessible to dev, outside /root.
@@ -186,7 +216,7 @@ sudo -u dev -H /usr/bin/gh config set git_protocol https --host github.com
 printf '%s' '__DOTFILES_B64__' | base64 -d > /usr/local/share/devwright/dotfiles.sh
 chmod 755 /usr/local/share/devwright/dotfiles.sh
 if [ -n "$dotfiles_repository" ]; then
-  /bin/bash /usr/local/share/devwright/dotfiles.sh "$dotfiles_repository" "$dotfiles_install"
+  /bin/bash /usr/local/share/devwright/dotfiles.sh "$dotfiles_repository" "$dotfiles_install" "$dotfiles_bundle"
 fi
 
 # Install hooks after personal dotfiles so their early returns or replacements

@@ -14,13 +14,13 @@ func TestEmbeddedPolicyParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !s.SandboxEnabled() || !s.StrictSandbox() || !s.FilesystemIsolated() {
+	if s.Sandbox.Enabled != nil || s.Sandbox.AllowUnsandboxedCommands != nil || s.Sandbox.FailIfUnavailable != nil {
 		t.Fatalf("embedded policy posture: %+v", s.Sandbox)
 	}
 	if s.AllowedMcpServers == nil || len(*s.AllowedMcpServers) != 0 || s.DisableClaudeAiConnectors == nil || !*s.DisableClaudeAiConnectors {
 		t.Fatal("embedded policy must disable connectors and configured MCP servers")
 	}
-	if s.Permissions.DisableBypassPermissionsMode != "disable" || len(s.Permissions.Deny) == 0 || len(s.Sandbox.Filesystem.DenyRead) == 0 {
+	if s.Permissions.DisableBypassPermissionsMode != "" || len(s.Permissions.Deny) != 0 || len(s.Sandbox.Filesystem.DenyRead) != 0 {
 		t.Fatalf("embedded permissions: %+v", s.Permissions)
 	}
 }

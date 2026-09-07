@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -182,34 +181,19 @@ func claudeExpectations(policy []byte, home string) (observation, bool, error) {
 	return want, want.Secret == "denied" && fs["allowManagedReadPathsOnly"] == true, nil
 }
 
-func codexExpectations(policy, bundled []byte, home string) (observation, error) {
-	var root, defaults map[string]any
+func codexExpectations(policy, _ []byte, home string) (observation, error) {
+	var root map[string]any
 	if err := toml.Unmarshal(policy, &root); err != nil {
 		return observation{}, err
 	}
-	if err := toml.Unmarshal(bundled, &defaults); err != nil {
-		return observation{}, err
-	}
+	// Without a managed default, the effective profile is a user preference.
+	// Measure access without treating that preference as a policy violation.
 	want := observation{}
 	permissions := object(root["permissions"])
-	defaultPermissions := object(defaults["permissions"])
 	profile, _ := root["default_permissions"].(string)
 	selected := object(permissions[profile])
-	baseline := object(defaultPermissions["vm_dev"])
-	// Network and description changes do not alter these filesystem probes.
-	strip := func(m map[string]any) map[string]any {
-		r := map[string]any{}
-		for k, v := range m {
-			if k != "network" && k != "description" {
-				r[k] = v
-			}
-		}
-		return r
-	}
-	if selected != nil && reflect.DeepEqual(strip(selected), strip(baseline)) && reflect.DeepEqual(permissions["filesystem"], defaultPermissions["filesystem"]) {
-		// Both fixture paths live in the development home, which is writable
-		// even when the sibling is outside the active workspace.
-		want.Workspace, want.Outside = "allowed", "allowed"
+	if profile == ":workspace" || (selected["extends"] == ":workspace" && len(selected) == 1) {
+		want = observation{"allowed", "denied", "allowed"}
 	}
 	if deniesCanary(object(permissions["filesystem"])["deny_read"], home) {
 		want.Secret = "denied"
@@ -284,6 +268,12 @@ func codexBehaviorCheck(home string, policy, bundled []byte, selected codexpolic
 			args := []string{"codex", "sandbox", "--include-managed-config", "-C", f.work}
 			if selected.Default != "" {
 				args = append(args, "-P", selected.Default)
+			} else {
+				// --include-managed-config requires an explicit profile in Codex
+				// 0.153.4. Probe the built-in workspace profile without imposing
+				// it as the user's selected mode.
+				args = append(args, "-P", ":workspace")
+				label += " built-in :workspace"
 			}
 			expected := want
 			if override {

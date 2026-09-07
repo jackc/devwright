@@ -269,6 +269,7 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 		return err
 	}
 	v := vm{options: o, ctx: ctx, home: home, out: stdout, run: commandRunner(ctx, stdin, stdout, stderr),
+		hostGit:     commandRunnerEnvironment(ctx, stdin, stdout, stderr, os.Environ),
 		withContext: func(ctx context.Context) runner { return commandRunner(ctx, stdin, stdout, stderr) }}
 	if o.action != "render" {
 		check := preflight

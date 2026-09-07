@@ -1,6 +1,7 @@
 # Initial user defaults only. Subsequent provisioning preserves this file.
-default_permissions = "vm_dev"
+default_permissions = ":workspace"
 approval_policy = "on-request"
+approvals_reviewer = "auto_review"
 
 [shell_environment_policy]
 inherit = "all"

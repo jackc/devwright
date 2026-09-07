@@ -35,9 +35,12 @@ func TestBehaviorExpectations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	custom := strings.ReplaceAll(string(bundled), "vm_dev", "custom") + "\n# formatting change\n"
+	custom := "default_permissions = 'custom'\n[permissions.custom]\nextends = ':workspace'\n# formatting change\n"
+	if got, err := codexExpectations(bundled, bundled, home); err != nil || got != (observation{}) {
+		t.Fatalf("feature-only policy must leave filesystem expectations unknown: %+v %v", got, err)
+	}
 	got, err := codexExpectations([]byte(custom), bundled, home)
-	if err != nil || got != (observation{"allowed", "allowed", "denied"}) {
+	if err != nil || got != (observation{"allowed", "denied", "allowed"}) {
 		t.Fatalf("%+v %v", got, err)
 	}
 }
@@ -162,7 +165,7 @@ func TestCodexBehaviorCustomProfileAndContinuation(t *testing.T) {
 	os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0755)
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 	bundled, _ := os.ReadFile("../../config/codex/requirements.toml")
-	policy := []byte(strings.ReplaceAll(string(bundled), "vm_dev", "custom"))
+	policy := []byte("default_permissions = 'custom'\n[permissions.custom]\nextends = ':workspace'\n")
 	var out bytes.Buffer
 	err := codexBehaviorCheck(home, policy, bundled, codexpolicy.Requirements{Default: "custom"}, &out)
 	if err == nil || !strings.Contains(out.String(), "rejected before execution") || strings.Count(out.String(), "FAIL") != 2 {

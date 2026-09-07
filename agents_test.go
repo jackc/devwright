@@ -199,6 +199,15 @@ func TestCodexFileLifecycle(t *testing.T) {
 	wantFile(t, root+"/etc/codex/requirements.toml", string(bundled))
 	apply(options{})
 	wantFile(t, root+"/etc/codex/requirements.toml", string(bundled))
+	legacy := "default_permissions = 'vm_dev'\nmodel = 'personal'\n[profiles.custom]\ndefault_permissions = 'vm_dev'\n"
+	os.WriteFile(root+"/home/dev/.codex/config.toml", []byte(legacy), 0600)
+	apply(options{})
+	wantFile(t, root+"/home/dev/.codex/config.toml", strings.Replace(legacy, "'vm_dev'", `":workspace"`, 1))
+	// A custom managed policy can continue to define the old profile name.
+	os.WriteFile(policy, []byte("default_permissions = 'vm_dev'\n"), 0600)
+	os.WriteFile(root+"/home/dev/.codex/config.toml", []byte(legacy), 0600)
+	apply(options{codexRequirements: policy})
+	wantFile(t, root+"/home/dev/.codex/config.toml", legacy)
 }
 
 func TestClaudeFileLifecycle(t *testing.T) {
@@ -249,6 +258,17 @@ func TestClaudeFileLifecycle(t *testing.T) {
 	wantFile(t, root+"/etc/claude-code/managed-settings.json", string(bundled))
 	apply(options{})
 	wantFile(t, root+"/etc/claude-code/managed-settings.json", string(bundled))
+	settingsPath := root + "/home/dev/.claude/settings.json"
+	os.WriteFile(settingsPath, []byte(`{"sandbox":{"autoAllowBashIfSandboxed":true}}`), 0600)
+	apply(options{})
+	data, err := os.ReadFile(settingsPath)
+	if err != nil || !strings.Contains(string(data), `"enabled": true`) || !strings.Contains(string(data), `"autoAllowBashIfSandboxed": true`) {
+		t.Fatalf("old starter sandbox preference was lost: %s %v", data, err)
+	}
+	personal = `{"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true},"model":"personal"}`
+	os.WriteFile(settingsPath, []byte(personal), 0600)
+	apply(options{})
+	wantFile(t, settingsPath, personal)
 }
 
 func TestPolicyMode(t *testing.T) {

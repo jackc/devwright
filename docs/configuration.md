@@ -135,9 +135,9 @@ Sign in to Claude Code the same way: run `claude` inside the guest and finish
 `/login` by opening the printed URL on the host and pasting the code, or create
 a long-lived token with `claude setup-token` on a trusted machine and add
 `export CLAUDE_CODE_OAUTH_TOKEN='...'` to `credentials.sh`. An interactive login
-is stored in `~/.claude/.credentials.json` with mode `0600`; the managed policy
-denies that file, and Codex's sign-in file, to sandboxed commands and to Claude
-Code's file tools.
+is stored in `~/.claude/.credentials.json` with mode `0600`. Neither embedded
+agent policy adds secret-path read denials; minimize credentials available to
+`dev` and use each agent's personal settings for additional restrictions.
 
 For the desktop, add **lima-dev** as an SSH host in its remote connection
 settings, then select a guest directory under `/home/dev/projects`. Use the
@@ -173,20 +173,21 @@ are idle because it updates installed software and reloads SSH configuration.
 
 ## Custom Codex policy and defaults
 
-The embedded `vm_dev` profile permits writes throughout the development user's
-home and temporary directories, with read access elsewhere. Keep repositories
-and worktrees under that home; external workspace paths require a custom policy.
-It intentionally does not inherit Codex's `:workspace` profile, whose read-only
-Git metadata can block commits and linked-worktree cleanup. Repositories and
-worktrees under the home directory can share Git metadata and merge changes
-without widening permissions for each task. This also permits changes to shell
-startup files and agent configuration in that home. The VM and Unix account
-permissions are the primary boundary; managed secret-path denials remain an
-additional safeguard. This profile does not grant sudo or override OS permissions.
-It grants access through the enclosing home rather than `:workspace_roots`:
-Codex 0.153.4 otherwise adds a read-only mount for a linked worktree's resolved
-Git directory even with a writable `.git` rule. An explicit `~/.codex` grant
-allows worktrees stored by the app there; the sign-in file remains denied.
+The embedded managed policy only disables apps, plugins, browser/computer use,
+and configured MCP servers. It does not restrict permission profiles, sandbox
+modes, approval policies, or approval reviewers. The normal Codex permission
+controls remain available; the VM and Unix account are the outer security boundary.
+
+Initial personal defaults select the built-in `:workspace` profile with
+`on-request` approvals and `auto_review`. These are editable preferences, not
+managed requirements. The workspace sandbox restricts writes and networking;
+approved exceptions can run outside that command sandbox, subject to Unix
+permissions. Neither agent's managed policy adds filesystem or permission-mode restrictions.
+
+When using the embedded policy, `configure` migrates the obsolete top-level
+`default_permissions = "vm_dev"` personal setting to `":workspace"`, backing up
+the old config under `/usr/local/share/devwright`. Other personal settings and
+custom managed-policy selections are preserved.
 
 The executable includes default Codex files. Supply explicit host file paths to
 replace either complete file; settings are not merged and project directories
@@ -225,8 +226,8 @@ An existing file remains untouched unless `--replace-codex-config` is supplied
 with `--codex-config` on `configure`. This option overwrites the personal config;
 back it up first if needed. It does not alter credentials. The initial config
 is not saved as a persistent template. Keep the personal config compatible with
-the selected requirements: the embedded user config selects `vm_dev`, so a
-policy using another profile may also need a matching user config.
+the selected requirements: a custom policy that restricts profiles may also
+need a matching user config.
 
 These are operator-controlled overrides. Managed requirements remain root-owned;
 `dev` can change personal preferences but cannot use them to loosen managed
@@ -237,7 +238,7 @@ Verification always checks Linux isolation, policy ownership and checksum, and
 Codex's strict config loading. It compares the selected managed default, allowed
 profiles, and feature requirements with the app-server response and checks
 resolved feature enforcement. Embedded and custom policies both get behavioral
-probes using the selected default profile: workspace writes, outside-workspace
+probes using the managed default when present, otherwise the built-in workspace profile: workspace writes, outside-workspace
 writes, synthetic `~/.pgpass` reads, and a lower-scope read override. Reports
 separate observed access (**allowed** or **denied**) from assessment: **matches
 policy**, **contradicts policy**, or **expectation unknown**. Formatting changes
@@ -281,23 +282,30 @@ devwright configure my-dev --reset-claude-managed-settings
 
 The selection, restore, reset, and replace rules match the Codex options above,
 with the custom copy saved as `/usr/local/share/devwright/custom-managed-settings.json`.
-The embedded policy turns the Bash sandbox on and refuses to start without it,
-forbids unsandboxed retries and bypass mode, denies the same secret paths as the
-Codex policy plus both agents' sign-in files to sandboxed commands and to the
-Read/Grep/Glob tools, locks read paths so no lower scope can re-open them, allows
-every domain because the VM is the network boundary, and turns off claude.ai
-connectors, configured MCP servers, the built-in browser and computer-use
-servers, plugin marketplaces, sideloaded plugins, and channels. Self-updates are
-disabled so `configure` is the only update path. The initial personal file only
-lets sandboxed commands run without prompts. Claude Code drops individual
-invalid managed entries and keeps the rest, so verification checks the posture
-Claude Code reports rather than trusting the file.
+The embedded managed policy disables claude.ai connectors, configured MCP
+servers, the built-in browser and computer-use servers, plugin marketplaces,
+sideloaded plugins, and channels. It does not enforce sandbox settings,
+filesystem read denials, network allowlists, or permission modes. Users can choose
+those settings themselves, including unsandboxed retries and bypass mode.
+
+The initial personal settings enable the Bash sandbox and auto-allow commands
+inside it. These remain editable preferences. When using the embedded policy,
+`configure` migrates an unchanged old starter file by adding `sandbox.enabled`
+as a personal setting, with a backup under `/usr/local/share/devwright`.
+Customized personal files are preserved. Existing customized files that relied
+on the old managed setting can enable sandboxing with `/sandbox` or
+`"sandbox": {"enabled": true}` in personal settings. Updates still install through
+`configure`; the managed policy no longer adds `DISABLE_UPDATES`.
+
+Claude Code drops individual invalid managed entries and keeps the rest, so
+verification checks the reported posture against any explicit custom policy.
 
 Verification checks that `claude` resolves to the root-owned package, the
 policy checksum, the absence of `managed-settings.d` drop-ins and
 `managed-mcp.json`, the bubblewrap AppArmor state described under isolation limits, and that
-`claude sandbox status` reports the sandbox on, strict, and set by policy, when
-the installed release prints that report. For embedded and custom policies it
+`claude sandbox status` matches any managed sandbox requirements, when the
+installed release prints that report. The embedded policy leaves that choice
+to the user. For embedded and custom policies it
 then drives non-interactive sessions through a loopback stub of the Messages API:
 the stub asks Claude Code to run the verifier's probe through the Bash tool, so
 the real sandbox applies without a model or sign-in. Each session gets a minimal
@@ -330,17 +338,26 @@ any shell preferences; the recipe does not assume Mise or Zsh.
 Both `root` and `dev` get independent checkouts at
 `~/.local/share/devwright/dotfiles`. The installer runs as each account, so it must
 support `dev` without sudo. Only supply repositories you trust to run as root.
-The repository must be accessible from both guest accounts; host credentials
-and SSH agents are not forwarded. Public HTTPS repositories work without setup.
+For Lima and Incus VMs, Git must be installed on the host. Devwright fetches the
+repository's default branch on the host using your normal Git authentication
+(including credential helpers, GitHub tokens, and your SSH agent). Private
+repositories work if the host can clone them. A temporary Git bundle transfers
+the committed files and history to both guest accounts over admin SSH. Host Git
+configuration, credential stores, and SSH agents are not transferred. The host
+clone and guest bundle are removed when setup exits; installers run only inside
+the VM. Submodule contents and Git LFS objects are not included in the bundle.
+
 GitHub HTTPS is configured to use the packaged `gh` credential helper after installation.
 The installer intentionally starts with a minimal environment, so credentials in
-`credentials.sh` are not loaded during dotfiles installation.
+`credentials.sh` are not loaded during dotfiles installation. If the installer
+itself accesses private services, it still needs guest-side authentication.
 Keep `/usr/local/bin` ahead of alternative Codex installations in your
 installer's PATH settings.
 
-Repeat the options on `configure` to update and rerun the installer. Updates use
-`git pull --ff-only`; local conflicts stop setup. A different repository URL is
-rejected for an existing checkout; move that checkout aside in each account
+Repeat the options on `configure` to update and rerun the installer. VM updates
+fetch a fresh bundle on the host and fast-forward each guest checkout to the
+fetched default branch; local conflicts or divergent history stop setup. A
+different repository URL is rejected for an existing checkout; move that checkout aside in each account
 before switching repositories. Omitting the options leaves installed dotfiles
 alone and does not update or remove them.
 
@@ -374,11 +391,11 @@ Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user.
 * Plain mode disables host filesystem mounts, SSH-agent forwarding, automatic
   port forwarding, and bundled containerd. Use explicit SSH tunnels for previews,
   for example `ssh -N -L 3000:127.0.0.1:3000 lima-dev`.
-* Linux protects `/root` from `dev`; the embedded managed Codex policy additionally
-  denies common sensitive paths, permits home writes and direct networking,
-  and disables apps, plugins, browser/computer use and configured MCP servers.
-  The embedded managed Claude Code policy does the same for Claude Code's Bash
-  sandbox and file tools. Only Bash is sandboxed there: WebFetch and WebSearch
+* Linux protects `/root` from `dev`; the embedded managed Codex policy disables
+  apps, plugins, browser/computer use and configured MCP servers. Filesystem,
+  network, and approval modes are user preferences.
+  Claude Code's managed policy likewise restricts integrations, leaving sandbox
+  and permission choices to the user. Only Bash is sandboxed there: WebFetch and WebSearch
   run in Claude Code's own process. Claude Code's bundled seccomp filter blocks
   Unix sockets inside the sandbox once the required AppArmor profile is in place;
   the guest exposes no agent, Docker, or Incus socket to `dev` either way, and

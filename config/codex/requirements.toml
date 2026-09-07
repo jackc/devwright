@@ -1,34 +1,5 @@
 # Installed as root; applies to all supported Codex runtimes in this VM.
-default_permissions = "vm_dev"
-allowed_approval_policies = ["untrusted", "on-request"]
-allowed_sandbox_modes = ["read-only", "workspace-write"]
-
-[allowed_permission_profiles]
-vm_dev = true
-
-[permissions.vm_dev]
-description = "Shared development account: home writes with direct network access"
-
-# The VM and Unix account are the security boundary. Do not inherit :workspace:
-# its read-only Git metadata prevents commits and linked-worktree maintenance.
-[permissions.vm_dev.filesystem]
-":root" = "read"
-"~/" = "write"
-# Codex stores its linked worktrees here. Explicitly reopen this metadata path.
-"~/.codex" = "write"
-":tmpdir" = "write"
-":slash_tmp" = "write"
-# Do not add :workspace_roots: Codex 0.153.4 injects a read-only mount for each
-# linked worktree's resolved gitdir when that worktree is a writable root.
-# The enclosing home grant already covers repositories and their worktrees.
-
-[permissions.vm_dev.network]
-enabled = true
-
-# Linux ownership protects the administrator even outside Codex.
-# These additional denials protect common sensitive paths inside Codex.
-[permissions.filesystem]
-deny_read = ["/root", "~/.ssh", "~/.pgpass", "~/.aws", "~/.gnupg", "~/.kube", "~/.codex/auth.json", "~/.claude/.credentials.json"]
+# Sandbox and approval modes are user preferences, not managed restrictions.
 
 [features]
 apps = false

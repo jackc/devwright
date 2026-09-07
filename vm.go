@@ -38,6 +38,7 @@ type vm struct {
 	ctx         context.Context
 	out         io.Writer
 	run         runner
+	hostGit     runner
 	withContext func(context.Context) runner
 }
 
@@ -184,6 +185,13 @@ func (v *vm) configure(state instance) error {
 	script, err := v.provision()
 	if err != nil {
 		return err
+	}
+	if v.dotfilesRepo != "" {
+		bundle, err := prepareDotfiles(v.hostGit, v.dotfilesRepo)
+		if err != nil {
+			return err
+		}
+		script = dotfilesBundleScript(bundle, script)
 	}
 	if err := v.remote(state, []string{"/bin/bash", "-s"}, "root", strings.NewReader(script)); err != nil {
 		return err

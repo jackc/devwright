@@ -33,6 +33,10 @@ func TestProcessHelper(t *testing.T) {
 			}
 		}
 		os.Stdout.WriteString("absent\n")
+	case "host-env":
+		if os.Getenv("GH_TOKEN") != "synthetic-token" || os.Getenv("SSH_AUTH_SOCK") != "synthetic-token" {
+			os.Exit(9)
+		}
 	case "fail":
 		os.Stderr.WriteString("diagnostic\n")
 		os.Exit(7)
@@ -57,6 +61,10 @@ func TestSubprocessSafety(t *testing.T) {
 	output, err := run(append(base, "env"), nil, true)
 	if err != nil || output != "absent\n" || os.Getenv("GH_TOKEN") != "synthetic-token" {
 		t.Fatalf("environment filtering: %s %v", output, err)
+	}
+	_, err = commandRunnerEnvironment(context.Background(), nil, io.Discard, &stderr, os.Environ)(append(base, "host-env"), nil, true)
+	if err != nil {
+		t.Fatalf("host Git authentication environment: %v", err)
 	}
 	values := []string{"a path with spaces", "$(false)", "`false`", "one; two", "quote'and\"double", ""}
 	output, err = run(append(append([]string{}, append(base, "args")...), values...), nil, true)

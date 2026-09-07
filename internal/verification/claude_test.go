@@ -41,6 +41,7 @@ func TestClaudePosture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	strict, _ := claudepolicy.Parse([]byte(`{"sandbox":{"enabled":true,"allowUnsandboxedCommands":false}}`))
 	relaxed, _ := claudepolicy.Parse([]byte(`{"sandbox":{"enabled":false}}`))
 	good := `{"statusVersion":2,"enabled":true,"enabledSource":"policy","strictMode":true,"strictModeSource":"policy","filesystemPolicy":"strict"}`
 	for _, tc := range []struct {
@@ -49,10 +50,12 @@ func TestClaudePosture(t *testing.T) {
 		ok           bool
 	}{
 		{"embedded", "warning line\n" + good + "\n", embedded, true},
-		{"from settings", strings.Replace(good, `"enabledSource":"policy"`, `"enabledSource":"settings"`, 1), embedded, false},
-		{"sandbox off", strings.Replace(good, `"enabled":true`, `"enabled":false`, 1), embedded, false},
-		{"escape hatch", strings.Replace(good, `"strictMode":true`, `"strictMode":false`, 1), embedded, false},
-		{"relaxed filesystem", strings.Replace(good, `"filesystemPolicy":"strict"`, `"filesystemPolicy":"relaxed"`, 1), embedded, false},
+		{"embedded permits sandbox off", strings.Replace(good, `"enabled":true`, `"enabled":false`, 1), embedded, true},
+		{"embedded permits retries", strings.Replace(good, `"strictMode":true`, `"strictMode":false`, 1), embedded, true},
+		{"from settings", strings.Replace(good, `"enabledSource":"policy"`, `"enabledSource":"settings"`, 1), strict, false},
+		{"sandbox off", strings.Replace(good, `"enabled":true`, `"enabled":false`, 1), strict, false},
+		{"escape hatch", strings.Replace(good, `"strictMode":true`, `"strictMode":false`, 1), strict, false},
+		{"relaxed filesystem", strings.Replace(good, `"filesystemPolicy":"strict"`, `"filesystemPolicy":"relaxed"`, 1), strict, false},
 		{"custom relaxed policy", strings.Replace(good, `"enabled":true`, `"enabled":false`, 1), relaxed, true},
 		{"not json", "sandbox: on", embedded, false},
 		{"legacy status", `{"available":false,"installed":false,"policyLocked":false,"reasons":["x"]}`, embedded, false},

@@ -21,10 +21,12 @@ Run it from a terminal, not inside an agent session; pass
 `--settings config/claude/managed-settings.json` to test the embedded policy.
 
 Run `bash tests/codex-worktree.sh` as the development user inside a provisioned
-Linux VM to check branch creation, commit, merge, and linked-worktree cleanup
-through Codex's actual managed sandbox. It uses a disposable repository under
-the user's home and needs no model or login. The original workspace-only policy
-fails this check because the linked worktree's shared Git metadata is read-only.
+Linux VM to verify that the default managed sandbox blocks protected Git writes.
+Run `python3 tests/codex-worktree-approval.py` there to exercise an actual
+`on-request` approval through an ephemeral Codex app-server session. This second
+check requires Codex sign-in and consumes model usage. It approves only a fixed
+script in a disposable repository, then verifies branch creation, commit, merge,
+and worktree cleanup. Both checks preserve real repositories.
 
 `tests/environment-linux.sh` additionally checks credential loading on Ubuntu
 26.04 with Bash/Zsh interactive and noninteractive SSH, inherited child
@@ -102,6 +104,7 @@ Linux. Replace OWNER/TAP with the actual tap name.
 | `lima/bootstrap.sh` | Creation-only setup of key-based root SSH |
 | `incus/bootstrap.sh` | Creation-only SSH/account setup through Incus |
 | `lima/provision.sh` | Shared repeatable OS, account, SSH, development credential hooks, Git authentication, and Codex/Claude Code installation for Lima and Incus |
+| `dotfiles.go` | Host-authenticated Git fetch and temporary bundle transport for VM dotfiles |
 | `lima/dotfiles.sh` | Optional per-account dotfiles installation for root and dev |
 | `lima/credentials.sh` | Private dev credential file and Bash/Zsh startup hooks |
 | `config/codex/requirements.toml` | Root-owned, VM-wide managed restrictions |

@@ -1,6 +1,7 @@
 package devwright
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -291,6 +292,21 @@ func TestDotfilesIndependentAndRepeatable(t *testing.T) {
 			t.Fatalf("fixture: %s %v", output, err)
 		}
 	}
+	run := commandRunnerEnvironment(context.Background(), nil, io.Discard, io.Discard, func() []string {
+		return append(childEnvironment(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+	})
+	bundle, err := prepareDotfiles(run, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundlePath := filepath.Join(dir, "dotfiles.bundle")
+	if err := os.WriteFile(bundlePath, bundle, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The guest cannot reach the original repository, even on repeated setup.
+	if err := os.Rename(source, source+"-offline"); err != nil {
+		t.Fatal(err)
+	}
 	for _, account := range []string{"root", "dev"} {
 		home := filepath.Join(dir, account)
 		if err := os.Mkdir(home, 0o700); err != nil {
@@ -298,7 +314,7 @@ func TestDotfilesIndependentAndRepeatable(t *testing.T) {
 		}
 		env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1"}
 		for i := 0; i < 2; i++ {
-			cmd := exec.Command("/bin/bash", "-s", "--", source, "custom setup")
+			cmd := exec.Command("/bin/bash", "-s", "--", source, "custom setup", bundlePath)
 			cmd.Env, cmd.Stdin = env, strings.NewReader(setup)
 			if output, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("dotfiles: %s %v", output, err)
@@ -307,6 +323,57 @@ func TestDotfilesIndependentAndRepeatable(t *testing.T) {
 		data, err := os.ReadFile(filepath.Join(home, "installed"))
 		if err != nil || string(data) != home+"\n"+home+"\n" {
 			t.Fatalf("independent installs: %s %v", data, err)
+		}
+		// New host commits arrive through another bundle; no guest network fetch.
+		upstream := source + "-offline"
+		if err := os.WriteFile(filepath.Join(upstream, "revision"), []byte(account), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{
+			{"git", "-C", upstream, "add", "revision"},
+			{"git", "-C", upstream, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "update"},
+		} {
+			if _, err := run(args, nil, false); err != nil {
+				t.Fatal(err)
+			}
+		}
+		updated, err := prepareDotfiles(run, upstream)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(bundlePath, updated, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runSetup := func(repo string) error {
+			cmd := exec.Command("/bin/bash", "-s", "--", repo, "custom setup", bundlePath)
+			cmd.Env, cmd.Stdin = env, strings.NewReader(setup)
+			return cmd.Run()
+		}
+		if err := runSetup(source); err != nil {
+			t.Fatalf("bundle update: %v", err)
+		}
+		checkout := filepath.Join(home, ".local/share/devwright/dotfiles")
+		if data, err := os.ReadFile(filepath.Join(checkout, "revision")); err != nil || string(data) != account {
+			t.Fatalf("updated revision: %q %v", data, err)
+		}
+		if err := runSetup("different-repository"); err == nil {
+			t.Fatal("accepted repository switch")
+		}
+		// Divergent guest history must not be reset or run the installer.
+		for _, args := range [][]string{
+			{"git", "-C", checkout, "reset", "--hard", "HEAD~1"},
+			{"git", "-C", checkout, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "local history"},
+		} {
+			if _, err := run(args, nil, false); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := runSetup(source); err == nil {
+			t.Fatal("accepted divergent history")
+		}
+		data, err = os.ReadFile(filepath.Join(home, "installed"))
+		if err != nil || string(data) != strings.Repeat(home+"\n", 3) {
+			t.Fatalf("installer ran after rejected update: %q %v", data, err)
 		}
 		cmd := exec.Command("git", "config", "--global", "--get-all", "credential.https://github.com.helper")
 		cmd.Env = env

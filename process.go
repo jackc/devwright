@@ -28,9 +28,13 @@ func childEnvironment() []string {
 }
 
 func commandRunner(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) runner {
+	return commandRunnerEnvironment(ctx, stdin, stdout, stderr, childEnvironment)
+}
+
+func commandRunnerEnvironment(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, environment func() []string) runner {
 	return func(args []string, input io.Reader, capture bool) (string, error) {
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-		cmd.Env = childEnvironment()
+		cmd.Env = environment()
 		cmd.Stderr = stderr
 		cmd.Stdout = stdout
 		cmd.Stdin = input

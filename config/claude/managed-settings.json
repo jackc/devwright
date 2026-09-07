@@ -1,50 +1,17 @@
 {
-  "sandbox": {
-    "enabled": true,
-    "failIfUnavailable": true,
-    "allowUnsandboxedCommands": false,
-    "filesystem": {
-      "denyRead": [
-        "/root",
-        "~/.ssh",
-        "~/.pgpass",
-        "~/.aws",
-        "~/.gnupg",
-        "~/.kube",
-        "~/.codex/auth.json",
-        "~/.claude/.credentials.json"
-      ],
-      "allowManagedReadPathsOnly": true
-    },
-    "network": {
-      "allowedDomains": ["*"]
-    }
-  },
-  "permissions": {
-    "deny": [
-      "Read(//root/**)",
-      "Read(~/.ssh/**)",
-      "Read(~/.pgpass)",
-      "Read(~/.aws/**)",
-      "Read(~/.gnupg/**)",
-      "Read(~/.kube/**)",
-      "Read(~/.codex/auth.json)",
-      "Read(~/.claude/.credentials.json)"
-    ],
-    "disableBypassPermissionsMode": "disable"
-  },
   "disableClaudeAiConnectors": true,
   "allowedMcpServers": [],
   "allowManagedMcpServersOnly": true,
   "deniedMcpServers": [
-    {"serverName": "claude-in-chrome"},
-    {"serverName": "computer-use"}
+    {
+      "serverName": "claude-in-chrome"
+    },
+    {
+      "serverName": "computer-use"
+    }
   ],
   "enableAllProjectMcpServers": false,
   "strictKnownMarketplaces": [],
   "disableSideloadFlags": true,
-  "channelsEnabled": false,
-  "env": {
-    "DISABLE_UPDATES": "1"
-  }
+  "channelsEnabled": false
 }
