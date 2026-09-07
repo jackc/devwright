@@ -125,7 +125,8 @@ tool results across retried requests, and checks the bwrap profile checksum,
 the disabled stock profile, and the user-namespace sysctl; `--claude-config`
 files get the same typed validation as the managed file; the Linux user
 backend refuses to create accounts until the documented bwrap profile is
-loaded and the README lists the commands; the Linux acceptance VM installs
+loaded and the [backend guide](docs/backends.md#restricted-native-users-on-linux-and-macos)
+lists the commands; the Linux acceptance VM installs
 socat and that profile; `render` reports the latest channel; the lab refuses
 to delete directories it did not create, rejects fixtures under temp roots
 including macOS's, handles a timeout by killing the session's process group,
@@ -246,8 +247,9 @@ The standalone macOS script accepts a built executable, requires Remote Login
 and an administrator's sudo access, uses only synthetic credentials, and records
 its disposable fixtures. `--keep` retains fixtures; `--cleanup FIXTURE` removes
 those recorded accounts. It does not enable Remote Login or install host packages.
-See the README for prerequisites and commands. All disposable Linux test VMs
-created for this work were removed; existing development VMs were untouched.
+See [Development](DEVELOPMENT.md#native-acceptance-testing) for prerequisites and
+commands. All disposable Linux test VMs created for this work were removed;
+existing development VMs were untouched.
 
 Authenticated model execution, real private repository access, and GUI/FileVault
 integration remain untested. These
@@ -309,7 +311,8 @@ changed. Full fresh-VM provisioning, Incus acceptance, authenticated Codex/model
 execution, and the desktop's actual remote-runtime launcher were not rerun.
 The tests establish shell startup and inherited process environments; existing
 Codex configs must retain compatible environment settings. Independently started
-services need explicit setup. See the README for setup and restart details.
+services need explicit setup. See the [credential guide](docs/configuration.md#credentials-and-sign-in)
+for setup and restart details.
 
 The sections below record earlier implementations using their original names
 and commands. They are historical results, not current setup instructions.

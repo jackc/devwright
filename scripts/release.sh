@@ -18,7 +18,8 @@ mkdir -p "$dist"
 staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT
 mkdir -p "$staging/licenses"
-cp README.md VALIDATION.md "$staging/"
+cp README.md DEVELOPMENT.md VALIDATION.md CLAUDE-CODE-DESIGN.md "$staging/"
+cp -R docs "$staging/"
 go mod download
 bash scripts/build-guest.sh
 module_dir=$(go list -m -f '{{.Dir}}' golang.org/x/sys)
@@ -34,7 +35,7 @@ for platform in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$arch" go build -trimpath \
     -ldflags "-s -w -X main.version=$version" -o "$staging/devwright" ./cmd/devwright
   COPYFILE_DISABLE=1 tar --format=ustar -czf "$dist/devwright_${version}_${platform}.tar.gz" \
-    -C "$staging" devwright README.md VALIDATION.md licenses
+    -C "$staging" devwright README.md DEVELOPMENT.md VALIDATION.md CLAUDE-CODE-DESIGN.md docs licenses
 done
 (
   cd "$dist"
@@ -73,7 +74,7 @@ class Devwright < Formula
 
   def install
     bin.install "devwright"
-    doc.install "README.md", "VALIDATION.md", "licenses"
+    doc.install "README.md", "DEVELOPMENT.md", "VALIDATION.md", "CLAUDE-CODE-DESIGN.md", "docs", "licenses"
   end
 
   test do

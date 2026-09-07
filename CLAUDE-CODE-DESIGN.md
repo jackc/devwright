@@ -7,8 +7,8 @@ treatment the recipe gives Codex: a root-owned, VM-wide managed policy that the
 preserves, host-side override flags, and credential-free acceptance checks.
 
 Inputs: the Codex rules in [config/codex/requirements.toml](config/codex/requirements.toml)
-and [config/codex/config.toml](config/codex/config.toml), the project goals in
-[README.md](README.md#original-project-goals), the architecture assessment and
+and [config/codex/config.toml](config/codex/config.toml), the project purpose in
+[README.md](README.md), the architecture assessment and
 consolidated findings from the research branches (`OPTIONS.md`, `FINDINGS.md`),
 and the [Claude Code documentation](https://code.claude.com/docs/en/managed-settings)
 as of Claude Code 2.1.261. Everything marked **verified** below was checked on
@@ -154,7 +154,8 @@ file is staged outside dev's directories and renamed, as for Codex.
 
 Settings files are strict JSON with no comments, and Claude Code rejects a
 user file whose shape fails validation as a whole. Documentation for the file
-belongs in the README, not in the file.
+belongs in the [configuration guide](docs/configuration.md#custom-claude-code-policy-and-defaults),
+not in the file.
 
 ### Sign-in
 
@@ -347,8 +348,9 @@ prerequisite check adds `/usr/bin/bwrap` and `/usr/bin/socat` and does not
 install packages, per the backend's rules. Because the backend changes no host
 security policy, preflight also refuses to create accounts on a Linux host
 whose kernel restricts unprivileged user namespaces while `/usr/bin/bwrap` has
-no unconfined AppArmor profile loaded, and points at the README's profile
-instructions. Managed settings on the host are never touched; `render` reports
+no unconfined AppArmor profile loaded, and points at the
+[native-user prerequisites](docs/backends.md#restricted-native-users-on-linux-and-macos).
+Managed settings on the host are never touched; `render` reports
 "editable user defaults; host managed settings untouched". Native verification
 runs `claude --version` and the stub-driven probe with explicit sandbox
 settings passed through `--settings`, so it tests the mechanism rather than
