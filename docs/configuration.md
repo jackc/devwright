@@ -173,6 +173,16 @@ are idle because it updates installed software and reloads SSH configuration.
 
 ## Custom Codex policy and defaults
 
+The embedded `vm_dev` profile permits writes throughout the development user's
+home, active workspaces, and temporary directories, with read access elsewhere.
+It intentionally does not inherit Codex's `:workspace` profile, whose read-only
+Git metadata can block commits and linked-worktree cleanup. Repositories and
+worktrees under the home directory can share Git metadata and merge changes
+without widening permissions for each task. This also permits changes to shell
+startup files and agent configuration in that home. The VM and Unix account
+permissions are the primary boundary; managed secret-path denials remain an
+additional safeguard. This profile does not grant sudo or override OS permissions.
+
 The executable includes default Codex files. Supply explicit host file paths to
 replace either complete file; settings are not merged and project directories
 are not searched automatically. The Lima and Incus backends support these options:
@@ -360,7 +370,7 @@ Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user.
   port forwarding, and bundled containerd. Use explicit SSH tunnels for previews,
   for example `ssh -N -L 3000:127.0.0.1:3000 lima-dev`.
 * Linux protects `/root` from `dev`; the embedded managed Codex policy additionally
-  denies common sensitive paths, permits workspace writes and direct networking,
+  denies common sensitive paths, permits home and workspace writes and direct networking,
   and disables apps, plugins, browser/computer use and configured MCP servers.
   The embedded managed Claude Code policy does the same for Claude Code's Bash
   sandbox and file tools. Only Bash is sandboxed there: WebFetch and WebSearch

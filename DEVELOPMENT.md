@@ -20,6 +20,12 @@ on the host with a loopback stub and synthetic files, using no model or sign-in.
 Run it from a terminal, not inside an agent session; pass
 `--settings config/claude/managed-settings.json` to test the embedded policy.
 
+Run `bash tests/codex-worktree.sh` as the development user inside a provisioned
+Linux VM to check branch creation, commit, merge, and linked-worktree cleanup
+through Codex's actual managed sandbox. It uses a disposable repository under
+the user's home and needs no model or login. The original workspace-only policy
+fails this check because the linked worktree's shared Git metadata is read-only.
+
 `tests/environment-linux.sh` additionally checks credential loading on Ubuntu
 26.04 with Bash/Zsh interactive and noninteractive SSH, inherited child
 environments, the packaged `gh`, and isolation from root and another user. Run it as root in a test VM:

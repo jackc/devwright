@@ -7,8 +7,16 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
 vm_dev = true
 
 [permissions.vm_dev]
-description = "Shared development account: workspace writes and direct network access"
-extends = ":workspace"
+description = "Shared development account: home and workspace writes with direct network access"
+
+# The VM and Unix account are the security boundary. Do not inherit :workspace:
+# its read-only Git metadata prevents commits and linked-worktree maintenance.
+[permissions.vm_dev.filesystem]
+":root" = "read"
+"~/" = "write"
+":workspace_roots" = "write"
+":tmpdir" = "write"
+":slash_tmp" = "write"
 
 [permissions.vm_dev.network]
 enabled = true

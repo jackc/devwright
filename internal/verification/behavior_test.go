@@ -37,7 +37,7 @@ func TestBehaviorExpectations(t *testing.T) {
 	}
 	custom := strings.ReplaceAll(string(bundled), "vm_dev", "custom") + "\n# formatting change\n"
 	got, err := codexExpectations([]byte(custom), bundled, home)
-	if err != nil || got != (observation{"allowed", "denied", "denied"}) {
+	if err != nil || got != (observation{"allowed", "allowed", "denied"}) {
 		t.Fatalf("%+v %v", got, err)
 	}
 }
@@ -165,7 +165,7 @@ func TestCodexBehaviorCustomProfileAndContinuation(t *testing.T) {
 	policy := []byte(strings.ReplaceAll(string(bundled), "vm_dev", "custom"))
 	var out bytes.Buffer
 	err := codexBehaviorCheck(home, policy, bundled, codexpolicy.Requirements{Default: "custom"}, &out)
-	if err == nil || !strings.Contains(out.String(), "rejected before execution") || strings.Count(out.String(), "FAIL") != 3 {
+	if err == nil || !strings.Contains(out.String(), "rejected before execution") || strings.Count(out.String(), "FAIL") != 2 {
 		t.Fatalf("%s %v", &out, err)
 	}
 	args, _ := os.ReadFile(log)

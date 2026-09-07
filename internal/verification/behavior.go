@@ -207,7 +207,9 @@ func codexExpectations(policy, bundled []byte, home string) (observation, error)
 		return r
 	}
 	if selected != nil && reflect.DeepEqual(strip(selected), strip(baseline)) && reflect.DeepEqual(permissions["filesystem"], defaultPermissions["filesystem"]) {
-		want.Workspace, want.Outside = "allowed", "denied"
+		// Both fixture paths live in the development home, which is writable
+		// even when the sibling is outside the active workspace.
+		want.Workspace, want.Outside = "allowed", "allowed"
 	}
 	if deniesCanary(object(permissions["filesystem"])["deny_read"], home) {
 		want.Secret = "denied"
