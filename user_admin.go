@@ -107,7 +107,7 @@ func validateUserRequest(r userRequest) error {
 		}
 	}
 	if len(r.ClaudeConfig) > 0 {
-		if err := checkJSONObject(r.ClaudeConfig); err != nil {
+		if err := checkClaudeSettings(r.ClaudeConfig); err != nil {
 			return err
 		}
 	}
@@ -498,6 +498,11 @@ func (a *userAdmin) preflight(port int) error {
 			return fmt.Errorf("missing host prerequisite %s; install host tools administratively", p)
 		}
 	}
+	if a.goos == "linux" {
+		if err := checkLinuxSandboxPolicy("/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "/sys/kernel/security/apparmor/profiles"); err != nil {
+			return err
+		}
+	}
 	if _, err := a.command(nil, "/usr/bin/git", "--version"); err != nil {
 		return errors.New("Git is unavailable; on macOS install Command Line Tools")
 	}
@@ -531,6 +536,34 @@ func (a *userAdmin) preflight(port int) error {
 		return errors.New("system sshd_config needs a global Include /etc/ssh/sshd_config.d/*.conf; add it administratively before setup")
 	}
 	return nil
+}
+
+// Ubuntu's unprivileged user-namespace restriction plus its stock
+// bwrap-userns-restrict profile stop Claude Code's sandbox from applying its
+// seccomp filter. The backend changes no host security policy, so it refuses
+// to create accounts until an administrator installs the documented
+// unconfined bwrap profile; see the README's native-user prerequisites.
+func checkLinuxSandboxPolicy(sysctlPath, profilesPath string) error {
+	restrict, err := os.ReadFile(sysctlPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(restrict)) != "1" {
+		return nil
+	}
+	profiles, err := os.ReadFile(profilesPath)
+	if err != nil {
+		return fmt.Errorf("read loaded AppArmor profiles: %w", err)
+	}
+	for _, line := range strings.Split(string(profiles), "\n") {
+		if strings.HasPrefix(line, "bwrap (") && strings.Contains(line, "unconfined") {
+			return nil
+		}
+	}
+	return errors.New("the kernel restricts unprivileged user namespaces and /usr/bin/bwrap has no unconfined AppArmor profile, so Claude Code's sandbox cannot run; install the bwrap profile from the README's native-user prerequisites administratively, then retry")
 }
 
 // macOS Remote Login creates missing host keys in its socket-activated wrapper.

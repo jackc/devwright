@@ -1,8 +1,6 @@
 package devsandbox
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 
@@ -21,7 +19,7 @@ func (o *options) loadAgentFiles() error {
 		{o.codexRequirements, &o.requirementsPayload, checkCodexRequirements},
 		{o.codexConfig, &o.configPayload, checkTOML},
 		{o.claudeManagedSettings, &o.managedPayload, checkClaudeManagedSettings},
-		{o.claudeConfig, &o.claudeConfigPayload, checkJSONObject},
+		{o.claudeConfig, &o.claudeConfigPayload, checkClaudeSettings},
 	} {
 		if entry.path == "" {
 			continue
@@ -56,14 +54,11 @@ func checkCodexRequirements(data []byte) error {
 	return nil
 }
 
-// Claude Code settings files are strict JSON objects without comments.
-func checkJSONObject(data []byte) error {
-	var value map[string]json.RawMessage
-	if err := json.Unmarshal(data, &value); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
-	}
-	if value == nil {
-		return errors.New("expected a JSON object")
+// Claude Code rejects a user settings file as a whole when a value has the
+// wrong type, so the dev defaults get the same typed check as the policy.
+func checkClaudeSettings(data []byte) error {
+	if _, err := claudepolicy.Parse(data); err != nil {
+		return fmt.Errorf("invalid Claude Code settings: %w", err)
 	}
 	return nil
 }

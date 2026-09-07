@@ -9,8 +9,9 @@ unset SSH_AUTH_SOCK GH_TOKEN GITHUB_TOKEN OPENAI_API_KEY
 test "$(id -u)" = 0
 test -s /root/.ssh/authorized_keys
 chmod 700 /root
-install -d -m 755 /usr/local/share/dev-sandbox /etc/codex
-rm -f /usr/local/share/dev-sandbox/managed
+policy_dir=/usr/local/share/dev-sandbox
+install -d -m 755 "$policy_dir" /etc/codex
+rm -f "$policy_dir/managed"
 
 test "$(getent passwd dev | cut -d: -f6)" = /home/dev
 test "$(id -u dev)" != 0
@@ -18,6 +19,14 @@ test "$(id -u dev)" != 0
 usermod -G '' dev
 passwd -l dev >/dev/null
 chmod 700 /home/dev
+# install -d follows an existing symlink when applying ownership and mode, so a
+# link planted by dev could redirect root at a protected directory. Refuse it.
+for dev_dir in /home/dev/.ssh /home/dev/.codex /home/dev/.claude /home/dev/.config /home/dev/projects; do
+  if [ -L "$dev_dir" ] || { [ -e "$dev_dir" ] && [ ! -d "$dev_dir" ]; }; then
+    echo "Refusing to manage $dev_dir: expected a directory, not a symlink or file" >&2
+    exit 1
+  fi
+done
 install -d -o dev -g dev -m 700 /home/dev/.ssh /home/dev/.codex /home/dev/.claude /home/dev/.config
 install -d -o dev -g dev -m 755 /home/dev/projects
 printf '%s\n' 'dev ALL=(ALL:ALL) !ALL' > /etc/sudoers.d/99-dev-sandbox-dev
@@ -41,76 +50,63 @@ apt-get install -y --no-install-recommends \
   ca-certificates curl git gh jq ripgrep build-essential gzip \
   zsh unzip bubblewrap apparmor gnupg socat
 
-# BEGIN CODEX FILES
+# BEGIN AGENT FUNCTIONS
+# install_managed_policy MODE STEM EXT TARGET DEFAULT_B64 CUSTOM_B64
 # Keep the operator's selection separate from the effective policy so configure
 # restores it after manual edits. Omission updates embedded defaults only.
-policy_dir=/usr/local/share/dev-sandbox
-printf '%s' '__DEFAULT_REQUIREMENTS_B64__' | base64 -d > "$policy_dir/default-requirements.toml"
-case "$codex_policy_mode" in
-  custom)
-    policy_tmp=$(mktemp "$policy_dir/requirements.XXXXXX")
-    printf '%s' '__REQUIREMENTS_B64__' | base64 -d > "$policy_tmp"
-    chmod 644 "$policy_tmp"
-    mv -fT "$policy_tmp" "$policy_dir/custom-requirements.toml"
-    ;;
-  default) rm -f "$policy_dir/custom-requirements.toml" ;;
-  preserve) ;;
-  *) echo 'Invalid Codex policy mode' >&2; exit 1 ;;
-esac
-selected_policy="$policy_dir/default-requirements.toml"
-if [ -f "$policy_dir/custom-requirements.toml" ]; then
-  selected_policy="$policy_dir/custom-requirements.toml"
-fi
-policy_tmp=$(mktemp /etc/codex/requirements.XXXXXX)
-cat "$selected_policy" > "$policy_tmp"
-chmod 644 "$policy_tmp"
-mv -fT "$policy_tmp" /etc/codex/requirements.toml
-sha256sum /etc/codex/requirements.toml > "$policy_dir/requirements.sha256"
-if [ "$replace_codex_config" = true ] || { [ ! -e /home/dev/.codex/config.toml ] && [ ! -L /home/dev/.codex/config.toml ]; }; then
-  # Stage outside dev's directories; rename rather than follow a config symlink.
-  config_tmp=$(mktemp "$policy_dir/config.XXXXXX")
-  printf '%s' '__CONFIG_B64__' | base64 -d > "$config_tmp"
-  chown dev:dev "$config_tmp"
-  chmod 600 "$config_tmp"
-  mv -fT "$config_tmp" /home/dev/.codex/config.toml
-fi
+install_managed_policy() {
+  local mode=$1 stem=$2 ext=$3 target=$4 default_b64=$5 custom_b64=$6
+  local default_file="$policy_dir/default-$stem.$ext" custom_file="$policy_dir/custom-$stem.$ext" tmp selected
+  printf '%s' "$default_b64" | base64 -d > "$default_file"
+  case "$mode" in
+    custom)
+      tmp=$(mktemp "$policy_dir/$stem.XXXXXX")
+      printf '%s' "$custom_b64" | base64 -d > "$tmp"
+      chmod 644 "$tmp"
+      mv -fT "$tmp" "$custom_file"
+      ;;
+    default) rm -f "$custom_file" ;;
+    preserve) ;;
+    *) echo "Invalid policy mode: $mode" >&2; exit 1 ;;
+  esac
+  selected=$default_file
+  if [ -f "$custom_file" ]; then
+    selected=$custom_file
+  fi
+  tmp=$(mktemp "$(dirname "$target")/$(basename "$target").XXXXXX")
+  cat "$selected" > "$tmp"
+  chmod 644 "$tmp"
+  mv -fT "$tmp" "$target"
+  sha256sum "$target" > "$policy_dir/$stem.sha256"
+}
+# install_user_config REPLACE B64 TARGET: seed dev's file once; replace on request.
+install_user_config() {
+  local replace=$1 b64=$2 target=$3 tmp
+  if [ "$replace" = true ] || { [ ! -e "$target" ] && [ ! -L "$target" ]; }; then
+    # Stage outside dev's directories; rename rather than follow a config symlink.
+    tmp=$(mktemp "$policy_dir/$(basename "$target").XXXXXX")
+    printf '%s' "$b64" | base64 -d > "$tmp"
+    chown dev:dev "$tmp"
+    chmod 600 "$tmp"
+    mv -fT "$tmp" "$target"
+  fi
+}
+# END AGENT FUNCTIONS
+
+# BEGIN CODEX FILES
+install_managed_policy "$codex_policy_mode" requirements toml /etc/codex/requirements.toml \
+  '__DEFAULT_REQUIREMENTS_B64__' '__REQUIREMENTS_B64__'
+install_user_config "$replace_codex_config" '__CONFIG_B64__' /home/dev/.codex/config.toml
 # END CODEX FILES
 
 # BEGIN CLAUDE FILES
-# Same selection model as Codex: the operator's choice is kept separately so
-# configure restores it after manual edits. Omission updates embedded defaults only.
 install -d -m 755 /etc/claude-code
-printf '%s' '__DEFAULT_MANAGED_SETTINGS_B64__' | base64 -d > "$policy_dir/default-managed-settings.json"
-case "$claude_policy_mode" in
-  custom)
-    policy_tmp=$(mktemp "$policy_dir/managed-settings.XXXXXX")
-    printf '%s' '__MANAGED_SETTINGS_B64__' | base64 -d > "$policy_tmp"
-    chmod 644 "$policy_tmp"
-    mv -fT "$policy_tmp" "$policy_dir/custom-managed-settings.json"
-    ;;
-  default) rm -f "$policy_dir/custom-managed-settings.json" ;;
-  preserve) ;;
-  *) echo 'Invalid Claude policy mode' >&2; exit 1 ;;
-esac
-selected_policy="$policy_dir/default-managed-settings.json"
-if [ -f "$policy_dir/custom-managed-settings.json" ]; then
-  selected_policy="$policy_dir/custom-managed-settings.json"
-fi
-policy_tmp=$(mktemp /etc/claude-code/managed-settings.XXXXXX)
-cat "$selected_policy" > "$policy_tmp"
-chmod 644 "$policy_tmp"
-mv -fT "$policy_tmp" /etc/claude-code/managed-settings.json
-sha256sum /etc/claude-code/managed-settings.json > "$policy_dir/managed-settings.sha256"
+install_managed_policy "$claude_policy_mode" managed-settings json /etc/claude-code/managed-settings.json \
+  '__DEFAULT_MANAGED_SETTINGS_B64__' '__MANAGED_SETTINGS_B64__'
 # Drop-ins replace single values and a managed MCP file adds servers; the
 # recipe installs neither, and configure removes any left behind.
 rm -rf /etc/claude-code/managed-settings.d /etc/claude-code/managed-mcp.json
-if [ "$replace_claude_config" = true ] || { [ ! -e /home/dev/.claude/settings.json ] && [ ! -L /home/dev/.claude/settings.json ]; }; then
-  config_tmp=$(mktemp "$policy_dir/claude-settings.XXXXXX")
-  printf '%s' '__CLAUDE_CONFIG_B64__' | base64 -d > "$config_tmp"
-  chown dev:dev "$config_tmp"
-  chmod 600 "$config_tmp"
-  mv -fT "$config_tmp" /home/dev/.claude/settings.json
-fi
+install_user_config "$replace_claude_config" '__CLAUDE_CONFIG_B64__' /home/dev/.claude/settings.json
 # END CLAUDE FILES
 
 # Keep the standalone package root-owned and accessible to dev, outside /root.
@@ -129,16 +125,21 @@ sudo -u dev -H /usr/local/bin/codex --version
 # Ubuntu's stock bubblewrap profile confines the commands bubblewrap runs to a
 # child profile that denies capabilities, which blocks the nested user namespace
 # Claude Code's seccomp filter creates. Disable it through the standard disable
-# directory and install Anthropic's documented profile: bubblewrap itself may
-# create user namespaces, and the commands it runs stay confined by bubblewrap's
-# namespaces and the agents' own sandboxes. The global unprivileged user
-# namespace restriction remains enabled.
-mkdir -p /etc/apparmor.d/disable
-if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then
-  ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/bwrap-userns-restrict
-  apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict 2>/dev/null || true
-fi
-cat > /etc/apparmor.d/bwrap <<'PROFILE'
+# directory and install Anthropic's documented profile. The profile is
+# unconfined and inherited on exec, so bubblewrap and the commands it runs may
+# create user namespaces; those commands rely on bubblewrap's namespaces and
+# each agent's own sandbox instead of the stock child profile. The global
+# unprivileged user namespace restriction stays enabled for everything else.
+# Without AppArmor there is no restriction to lift; verification reports the
+# actual sandbox behavior either way.
+rm -f "$policy_dir/bwrap-profile.sha256"
+if [ -d /sys/kernel/security/apparmor ]; then
+  mkdir -p /etc/apparmor.d/disable
+  if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then
+    ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/bwrap-userns-restrict
+    apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict 2>/dev/null || true
+  fi
+  cat > /etc/apparmor.d/bwrap <<'PROFILE'
 abi <abi/5.0>,
 include <tunables/global>
 
@@ -149,7 +150,12 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
   include if exists <local/bwrap>
 }
 PROFILE
-apparmor_parser -r /etc/apparmor.d/bwrap
+  if apparmor_parser -r /etc/apparmor.d/bwrap; then
+    sha256sum /etc/apparmor.d/bwrap > "$policy_dir/bwrap-profile.sha256"
+  else
+    echo 'Warning: could not load the bwrap AppArmor profile; sandbox verification will report the consequence' >&2
+  fi
+fi
 
 # Anthropic's signed apt repository provides a root-owned /usr/bin/claude.
 # Trust the release key only after checking its fingerprint.

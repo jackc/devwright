@@ -186,17 +186,19 @@ func parseOptions(args []string) (options, error) {
 	if (o.resetCodexRequirements || o.replaceCodexConfig || o.resetClaudeManagedSettings || o.replaceClaudeConfig) && o.action != "configure" {
 		return o, errors.New("reset/replace Codex and Claude Code options apply only to configure")
 	}
-	if o.resetCodexRequirements && o.set["codex-requirements"] {
-		return o, errors.New("--reset-codex-requirements conflicts with --codex-requirements")
-	}
-	if o.replaceCodexConfig && !o.set["codex-config"] {
-		return o, errors.New("--replace-codex-config requires --codex-config")
-	}
-	if o.resetClaudeManagedSettings && o.set["claude-managed-settings"] {
-		return o, errors.New("--reset-claude-managed-settings conflicts with --claude-managed-settings")
-	}
-	if o.replaceClaudeConfig && !o.set["claude-config"] {
-		return o, errors.New("--replace-claude-config requires --claude-config")
+	for _, agent := range []struct {
+		reset, replace                             bool
+		policyKey, resetKey, configKey, replaceKey string
+	}{
+		{o.resetCodexRequirements, o.replaceCodexConfig, "codex-requirements", "reset-codex-requirements", "codex-config", "replace-codex-config"},
+		{o.resetClaudeManagedSettings, o.replaceClaudeConfig, "claude-managed-settings", "reset-claude-managed-settings", "claude-config", "replace-claude-config"},
+	} {
+		if agent.reset && o.set[agent.policyKey] {
+			return o, fmt.Errorf("--%s conflicts with --%s", agent.resetKey, agent.policyKey)
+		}
+		if agent.replace && !o.set[agent.configKey] {
+			return o, fmt.Errorf("--%s requires --%s", agent.replaceKey, agent.configKey)
+		}
 	}
 	for key, path := range map[string]string{"codex-requirements": o.codexRequirements, "codex-config": o.codexConfig,
 		"claude-managed-settings": o.claudeManagedSettings, "claude-config": o.claudeConfig} {

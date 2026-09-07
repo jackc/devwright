@@ -81,7 +81,7 @@ func parseSandboxStatus(output string) (sandboxStatus, error) {
 func claudeSandboxStatus(claude, dir string) (sandboxStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	stdout, stderr, err := runWith(ctx, dir, nil, claude, "sandbox", "status")
+	stdout, stderr, err := runWith(ctx, dir, scrubbedEnvironment(), claude, "sandbox", "status")
 	if err != nil {
 		return sandboxStatus{}, fmt.Errorf("sandbox status: %w: %s", err, stderr)
 	}
@@ -179,6 +179,9 @@ func checkClaude(home string, out io.Writer) error {
 		fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, and drop-in absence")
 		fmt.Fprintln(out, "NOT TESTED: reported sandbox posture; this Claude Code release prints no posture fields on Linux")
 	}
+	if err := checkSandboxProfile(out, "/etc/apparmor.d", "/usr/local/share/dev-sandbox/bwrap-profile.sha256", "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"); err != nil {
+		return err
+	}
 	bundled, err := os.ReadFile("/usr/local/share/dev-sandbox/default-managed-settings.json")
 	if err != nil {
 		return err
@@ -188,6 +191,44 @@ func checkClaude(home string, out io.Writer) error {
 		return nil
 	}
 	return claudeSandboxCheck(claude, home, out)
+}
+
+// checkSandboxProfile compares the AppArmor state with what provisioning
+// recorded: the documented bwrap profile unchanged, the stock restrictive
+// profile disabled, and the global user-namespace restriction still on. Both
+// agents' bubblewrap sandboxes depend on that state.
+func checkSandboxProfile(out io.Writer, apparmorDir, sumPath, sysctlPath string) error {
+	expected, err := os.ReadFile(sumPath)
+	if errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintln(out, "NOT TESTED: bwrap AppArmor profile; provisioning found no AppArmor")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	profile, err := os.ReadFile(filepath.Join(apparmorDir, "bwrap"))
+	if err != nil {
+		return err
+	}
+	fields := strings.Fields(string(expected))
+	if len(fields) == 0 || fmt.Sprintf("%x", sha256.Sum256(profile)) != fields[0] {
+		return errors.New("bwrap AppArmor profile differs from provisioned recipe")
+	}
+	restrict, err := os.ReadFile(sysctlPath)
+	if err == nil && strings.TrimSpace(string(restrict)) != "1" {
+		return errors.New("Unprivileged user namespace restriction is disabled")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if _, err := os.Lstat(filepath.Join(apparmorDir, "bwrap-userns-restrict")); err == nil {
+		if _, err := os.Lstat(filepath.Join(apparmorDir, "disable", "bwrap-userns-restrict")); err != nil {
+			return errors.New("Stock bwrap-userns-restrict AppArmor profile is not disabled")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	fmt.Fprintln(out, "PASS bwrap AppArmor profile matches the recipe, stock profile disabled, user namespace restriction enabled")
+	return nil
 }
 
 // messageStub answers the Messages API on loopback: the first turn asks for
@@ -239,9 +280,13 @@ func (s *messageStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.Unmarshal(body, &request)
 	results := toolResults(request.Messages)
-	s.mu.Lock()
-	s.results = append(s.results, results...)
-	s.mu.Unlock()
+	if len(results) > 0 {
+		// Each request carries the whole conversation, so keep the latest
+		// view rather than appending the same results across retries.
+		s.mu.Lock()
+		s.results = results
+		s.mu.Unlock()
+	}
 	usage := map[string]int{"input_tokens": 1, "output_tokens": 1}
 	start := map[string]any{"id": "msg_stub", "type": "message", "role": "assistant", "model": request.Model,
 		"content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": usage}
@@ -315,21 +360,42 @@ type claudeRun struct {
 	subtype string
 }
 
-// claudeEnvironment keeps the account's environment but removes every
-// credential and session variable Claude Code could pick up.
-func claudeEnvironment(base, configDir string) []string {
+// scrubbedEnvironment keeps only the variables a session needs from the
+// account's login environment. Credentials, proxy settings, and provider
+// selectors exported by dotfiles or credentials.sh stay out, so the loopback
+// stub is the only endpoint a probe session can reach.
+func scrubbedEnvironment() []string {
 	var env []string
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
 		switch key {
-		case "SSH_AUTH_SOCK", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY",
-			"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN":
-			continue
+		case "HOME", "PATH", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TZ":
+			env = append(env, entry)
 		}
-		env = append(env, entry)
 	}
-	return append(env, "ANTHROPIC_API_KEY=synthetic-key", "ANTHROPIC_BASE_URL="+base, "CLAUDE_CONFIG_DIR="+configDir,
+	return env
+}
+
+// claudeEnvironment points a session at the stub with a synthetic key and
+// keeps its state inside the fixture's configuration directory.
+func claudeEnvironment(base, configDir string) []string {
+	return append(scrubbedEnvironment(), "ANTHROPIC_API_KEY=synthetic-key", "ANTHROPIC_BASE_URL="+base, "CLAUDE_CONFIG_DIR="+configDir,
 		"DISABLE_AUTOUPDATER=1", "DISABLE_UPDATES=1", "DISABLE_TELEMETRY=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1")
+}
+
+// checkProbeRun turns a session into a verdict. Only the probe's own report
+// distinguishes a policy failure from a session that never ran the probe.
+func checkProbeRun(run claudeRun, override bool) error {
+	text := strings.Join(run.results, "\n")
+	switch {
+	case override && strings.Contains(text, "managed deny-read did not hold"):
+		return fmt.Errorf("managed read denial did not hold against a lower-scope allowRead override: %s", text)
+	case strings.Contains(text, "did not hold"):
+		return fmt.Errorf("Claude sandbox enforcement failed: %s", text)
+	case run.subtype != "success" || !strings.Contains(text, "PASS Claude Code"):
+		return fmt.Errorf("Claude sandbox probe did not run to completion (%s); check bubblewrap and socat, the bwrap AppArmor profile, and for Incus containers sandbox.enableWeakerNestedSandbox: %s", run.subtype, text)
+	}
+	return nil
 }
 
 // runClaudeSession drives one non-interactive session through the stub.
@@ -422,15 +488,11 @@ func claudeSandboxCheck(claude, home string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("Claude sandbox probe failed: %w", err)
 		}
-		text := strings.Join(run.results, "\n")
-		if run.subtype != "success" || !strings.Contains(text, "PASS Claude Code") {
-			if override {
-				return fmt.Errorf("managed read denial did not hold against a lower-scope override: %s: %s", run.subtype, text)
-			}
-			return fmt.Errorf("Claude sandbox probe did not pass: %s: %s", run.subtype, text)
+		if err := checkProbeRun(run, override); err != nil {
+			return err
 		}
 		if !override {
-			for _, line := range strings.Split(text, "\n") {
+			for _, line := range strings.Split(strings.Join(run.results, "\n"), "\n") {
 				if strings.HasPrefix(line, "PASS ") {
 					fmt.Fprintln(out, line)
 				}
@@ -482,12 +544,12 @@ func nativeClaudeCheck(claude, home, exe string, out io.Writer) error {
 	settings := `{"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"autoAllowBashIfSandboxed":true}}`
 	run, err := runClaudeSession(ctx, claude, work, config, command, "--settings", settings)
 	if err != nil {
-		return fmt.Errorf("Claude Code workspace sandbox (check host bubblewrap/socat or Seatbelt support): %w", err)
+		return fmt.Errorf("Claude Code workspace sandbox (check host bubblewrap/socat, the bwrap AppArmor profile on Linux, or Seatbelt support): %w", err)
+	}
+	if err := checkProbeRun(run, false); err != nil {
+		return fmt.Errorf("Claude Code workspace sandbox: %w", err)
 	}
 	text := strings.Join(run.results, "\n")
-	if run.subtype != "success" || !strings.Contains(text, "PASS Claude Code") {
-		return fmt.Errorf("Claude Code workspace sandbox probe did not pass: %s: %s", run.subtype, text)
-	}
 	data, err := os.ReadFile(sibling)
 	if err != nil {
 		return err

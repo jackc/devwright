@@ -80,40 +80,34 @@ func (v *vm) provision() (string, error) {
 		"CREDENTIALS": "lima/credentials.sh",
 	} {
 		payload, err := recipe.ReadFile(path)
-		if key == "REQUIREMENTS" && v.requirementsPayload != nil {
-			payload = v.requirementsPayload
-		}
-		if key == "CONFIG" && v.configPayload != nil {
-			payload = v.configPayload
-		}
-		if key == "MANAGED_SETTINGS" && v.managedPayload != nil {
-			payload = v.managedPayload
-		}
-		if key == "CLAUDE_CONFIG" && v.claudeConfigPayload != nil {
-			payload = v.claudeConfigPayload
-		}
 		if err != nil {
 			return "", err
 		}
+		// Host-supplied files replace the embedded defaults for these placeholders.
+		if custom := map[string][]byte{"REQUIREMENTS": v.requirementsPayload, "CONFIG": v.configPayload,
+			"MANAGED_SETTINGS": v.managedPayload, "CLAUDE_CONFIG": v.claudeConfigPayload}[key]; custom != nil {
+			payload = custom
+		}
 		script = strings.ReplaceAll(script, "__"+key+"_B64__", base64.StdEncoding.EncodeToString(payload))
 	}
-	claudeMode := "preserve"
-	if v.claudeManagedSettings != "" {
-		claudeMode = "custom"
-	}
-	if v.resetClaudeManagedSettings {
-		claudeMode = "default"
-	}
-	script = "claude_policy_mode=" + shellQuote(claudeMode) + "\nreplace_claude_config=" + shellQuote(fmt.Sprint(v.replaceClaudeConfig)) + "\n" + script
-	mode := "preserve"
-	if v.codexRequirements != "" {
-		mode = "custom"
-	}
-	if v.resetCodexRequirements {
-		mode = "default"
-	}
-	script = "codex_policy_mode=" + shellQuote(mode) + "\nreplace_codex_config=" + shellQuote(fmt.Sprint(v.replaceCodexConfig)) + "\n" + script
+	// The script reads one selection mode and one replace flag per agent.
+	script = "claude_policy_mode=" + shellQuote(policyMode(v.claudeManagedSettings, v.resetClaudeManagedSettings)) +
+		"\nreplace_claude_config=" + shellQuote(fmt.Sprint(v.replaceClaudeConfig)) + "\n" + script
+	script = "codex_policy_mode=" + shellQuote(policyMode(v.codexRequirements, v.resetCodexRequirements)) +
+		"\nreplace_codex_config=" + shellQuote(fmt.Sprint(v.replaceCodexConfig)) + "\n" + script
 	return "dotfiles_repository=" + shellQuote(v.dotfilesRepo) + "\ndotfiles_install=" + shellQuote(v.dotfilesInstall) + "\n" + script, nil
+}
+
+// policyMode selects a managed policy: a host file replaces the saved
+// selection, reset restores the embedded default, omission preserves.
+func policyMode(custom string, reset bool) string {
+	switch {
+	case reset:
+		return "default"
+	case custom != "":
+		return "custom"
+	}
+	return "preserve"
 }
 
 func (v *vm) info() (instance, error) {

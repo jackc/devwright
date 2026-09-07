@@ -83,7 +83,7 @@ func runUserBackend(ctx context.Context, o options, stdin io.Reader, stdout, std
 			"codex_policy":  "editable user defaults; host requirements untouched",
 			"claude_policy": "editable user defaults; host managed settings untouched",
 			"provisioning": map[string]any{
-				"run_as": "dsb-" + o.name, "codex": "latest stable release in ~/.local/bin", "claude": "stable release in ~/.local/bin",
+				"run_as": "dsb-" + o.name, "codex": "latest stable release in ~/.local/bin", "claude": "latest release in ~/.local/bin",
 				"config_source": configSource, "replace_config": o.replaceCodexConfig,
 				"claude_config_source": claudeSource, "replace_claude_config": o.replaceClaudeConfig,
 				"dotfiles_repository": o.dotfilesRepo, "dotfiles_installer": o.dotfilesInstall,

@@ -210,8 +210,28 @@ An existing account, group, home, or unmanaged target file is never adopted.
 
 Linux hosts need systemd, shadow account utilities, sudo, OpenSSH client/server,
 Git, curl, Bash, bubblewrap, and socat. Codex's workspace sandbox and Claude
-Code's Bash sandbox both need functioning Linux sandbox support; Ubuntu 26.04's
-packaged bubblewrap/AppArmor setup is the tested configuration for Codex. Other systemd/shadow distributions are supported by prerequisite
+Code's Bash sandbox both need functioning Linux sandbox support. Ubuntu 24.04
+and later restrict unprivileged user namespaces, and Ubuntu's stock
+`bwrap-userns-restrict` profile confines the commands bubblewrap runs to a child
+profile that denies capabilities, which blocks the nested user namespace Claude
+Code's seccomp filter creates. The backend changes no host security policy, so
+on such hosts it refuses to create accounts until an administrator installs the
+profile Anthropic documents and disables the stock one, as the VM recipe does:
+
+```sh
+sudo mkdir -p /etc/apparmor.d/disable
+sudo ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/bwrap-userns-restrict
+sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+printf '%s\n' 'abi <abi/5.0>,' 'include <tunables/global>' '' \
+  'profile bwrap /usr/bin/bwrap flags=(unconfined) {' '  userns,' '' \
+  '  include if exists <local/bwrap>' '}' | sudo tee /etc/apparmor.d/bwrap >/dev/null
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+The profile is unconfined and inherited, so bubblewrap and every command it runs
+may create user namespaces and hold capabilities inside them; the global
+restriction stays enabled for everything else. Codex's sandbox runs under the
+same profile. Other systemd/shadow distributions are supported by prerequisite
 and behavior checks but have not received this repository's full acceptance run.
 On macOS, install Command Line Tools for Git and enable **Remote Login** in System
 Settings before creation. No host packages are installed automatically.
@@ -615,15 +635,19 @@ Claude Code reports rather than trusting the file.
 
 Verification checks that `claude` resolves to the root-owned package, the
 policy checksum, the absence of `managed-settings.d` drop-ins and
-`managed-mcp.json`, and that `claude sandbox status` reports the sandbox on,
-strict, and set by policy, when the installed release prints that report. For
-the embedded policy it then drives one
-non-interactive session through a loopback stub of the Messages API: the stub
-asks Claude Code to run the verifier's probe through the Bash tool, so the real
-sandbox applies without a model or sign-in. The probe checks a workspace write,
-an outside-workspace write denial, and a synthetic `~/.pgpass` read denial,
-then repeats with a lower-scope `allowRead` override that the managed lock must
-ignore. Custom policies report the behavior probe as **not tested**.
+`managed-mcp.json`, the bubblewrap AppArmor state described below, and that
+`claude sandbox status` reports the sandbox on, strict, and set by policy, when
+the installed release prints that report. For the embedded policy it then
+drives one non-interactive session through a loopback stub of the Messages API:
+the stub asks Claude Code to run the verifier's probe through the Bash tool, so
+the real sandbox applies without a model or sign-in. Each session gets a minimal
+environment, so proxy settings, provider selectors, and credentials exported in
+`credentials.sh` or dotfiles cannot redirect it away from the stub. The probe
+checks a workspace write, an outside-workspace write denial, and a synthetic
+`~/.pgpass` read denial, then repeats with a lower-scope `allowRead` override
+that the managed lock must ignore. Only the probe's own report is treated as a
+policy failure; a session that never ran it is reported as such. Custom policies
+report the behavior probe as **not tested**.
 
 ### Optional dotfiles
 
@@ -705,11 +729,15 @@ Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user.
 * Ubuntu's global unprivileged user-namespace restriction stays enabled. The
   recipe disables Ubuntu's stock `bwrap-userns-restrict` profile through
   `/etc/apparmor.d/disable/` and installs the profile Anthropic documents for
-  Claude Code, which lets `bwrap` itself create user namespaces. Ubuntu's stock
-  profile confined every command bubblewrap runs to a child profile that denies
-  capabilities, and that blocked the nested user namespace Claude Code's seccomp
-  filter creates; commands now rely on bubblewrap's namespaces and each agent's
-  own sandbox rather than on that child profile. Older Ubuntu releases are not
+  Claude Code. That profile is unconfined and inherited on exec, so `bwrap` and
+  every command it runs, for Codex as well as Claude Code, may create user
+  namespaces and hold capabilities inside them. Ubuntu's stock profile confined
+  those commands to a child profile that denies capabilities, which blocked the
+  nested user namespace Claude Code's seccomp filter creates; commands now rely
+  on bubblewrap's namespaces and each agent's own sandbox instead. Verification
+  checks the installed profile's checksum, that the stock profile is disabled,
+  and that the global restriction is still on. Without AppArmor the recipe
+  installs no profile and verification says so. Older Ubuntu releases are not
   supported.
 * Managed policy and installed tools are root-owned; development credentials and
   startup hooks are dev-owned. root SSH permits public-key authentication only;

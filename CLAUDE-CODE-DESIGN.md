@@ -197,13 +197,15 @@ with a custom file, replace requires a file, and empty paths are refused.
 
 ## Provisioning changes
 
-`lima/provision.sh` gains a `# BEGIN CLAUDE FILES` / `# END CLAUDE FILES`
-section identical in structure to the Codex one, driven by
+`lima/provision.sh` defines two shell functions, `install_managed_policy` and
+`install_user_config`, that both agents' file blocks call, driven by
 `claude_policy_mode` and `replace_claude_config` variables and
 `__DEFAULT_MANAGED_SETTINGS_B64__`, `__MANAGED_SETTINGS_B64__` and
 `__CLAUDE_CONFIG_B64__` placeholders substituted by `vm.provision()`. The
-package install runs before the files are installed so `claude --version`
-can be recorded and `sudo -u dev -H claude --version` proves dev can run it.
+policy files are installed before the package; after the apt install
+`claude --version` records the version and `sudo -u dev -H claude --version`
+proves dev can run it. Before applying ownership to dev's dot-directories the
+script refuses any that is a symlink, because `install -d` follows one.
 
 Ubuntu 26.04's packaged `bwrap-userns-restrict` profile lets Codex's
 bubblewrap sandbox run, but it confines every command bubblewrap launches to a
@@ -215,10 +217,14 @@ forbids. The recipe therefore disables the stock profile through
 `/etc/apparmor.d/disable/` and installs Anthropic's documented
 `/etc/apparmor.d/bwrap` profile (`flags=(unconfined)` with `userns`, ABI 5.0 on
 26.04). The global `kernel.apparmor_restrict_unprivileged_userns` restriction
-stays on; only `bwrap` may create user namespaces, and sandboxed commands are
-confined by bubblewrap's namespaces and each agent's own sandbox instead of the
-capability-denying child profile. With that profile in place the lab passed
-inside the guest. Incus containers may additionally need
+stays on for everything else. The profile is unconfined and inherited on
+exec, so `bwrap` and every command it runs, under Codex as well as Claude
+Code, may create user namespaces and hold in-namespace capabilities; those
+commands are confined by bubblewrap's namespaces and each agent's own sandbox
+instead of the capability-denying child profile. The verifier checks the
+profile's checksum, that the stock profile is disabled, and that the sysctl
+is still `1`; without AppArmor the recipe installs nothing and the verifier
+says NOT TESTED. With that profile in place the lab passed inside the guest. Incus containers may additionally need
 `sandbox.enableWeakerNestedSandbox: true` because bubblewrap cannot mount a
 fresh `/proc` in an unprivileged container; Codex's probe passed in such
 containers, so try without it first and add it per instance only if the probe
@@ -252,9 +258,14 @@ Everything below is credential-free and uses synthetic files only.
    ```sh
    ANTHROPIC_API_KEY=synthetic ANTHROPIC_BASE_URL=http://127.0.0.1:PORT \
    CLAUDE_CONFIG_DIR=<fixture>/config DISABLE_TELEMETRY=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-   claude -p --bare --model stub-model --allowedTools Bash --permission-prompts none \
+   claude -p --bare --model stub-model --allowedTools Bash \
      --max-turns 3 --output-format json 'Run the acceptance probe.'
    ```
+
+   The session's environment is an allow-list (`HOME`, `PATH`, `USER`,
+   `LOGNAME`, `SHELL`, locale, `TERM`, `TMPDIR`, `TZ`) plus the variables
+   above, so proxy settings, provider selectors and credentials from dev's
+   `credentials.sh` cannot redirect the request away from the stub.
 
    The stub answers the first request with a streamed `tool_use` block for
    `Bash` whose command is `/usr/local/share/dev-sandbox/verify claude-probe
@@ -269,10 +280,11 @@ Everything below is credential-free and uses synthetic files only.
    holds; this is the counterpart of Codex rejecting a conflicting override.
    `--bare` reads no OAuth credentials or keychain and skips hooks, plugins and
    memory, so the run touches nothing personal; `CLAUDE_CONFIG_DIR` keeps
-   session state inside the fixture. The documentation states that managed
-   settings still apply in the related `--restricted` and `--safe-mode` modes;
-   the first guest run must confirm the same for `--bare`, or the verifier
-   drops `--bare` and relies on `CLAUDE_CONFIG_DIR` alone.
+   session state inside the fixture. The guest runs confirmed that managed
+   settings apply under `--bare`: the canary denial and the lock test depend
+   on it. Only the probe's own `did not hold` report counts as an enforcement
+   failure; a session that never ran the probe is reported as not run, with
+   hints about bubblewrap, socat, the AppArmor profile and containers.
 6. A custom policy reports the behaviour probe as **NOT TESTED**, exactly as
    Codex does, and the run ends with the existing "authenticated model run,
    private repository scope, desktop-provided tool inventory" not-tested line.
@@ -326,22 +338,26 @@ defaults, not enforced policy", matching the Codex wording. On macOS the
 sandbox is Seatbelt and the login token lives in that account's keychain. On
 Linux the host must already have `bubblewrap` and `socat`; the helper's
 prerequisite check adds `/usr/bin/bwrap` and `/usr/bin/socat` and does not
-install packages, per the backend's rules. Managed settings on the host are
-never touched; `render` reports "editable user defaults; host managed settings
-untouched". Native verification runs `claude --version`, `claude sandbox status`
-(expecting `enabledSource: "settings"`), and the same stub-driven probe with
-the account's workspace defaults.
+install packages, per the backend's rules. Because the backend changes no host
+security policy, preflight also refuses to create accounts on a Linux host
+whose kernel restricts unprivileged user namespaces while `/usr/bin/bwrap` has
+no unconfined AppArmor profile loaded, and points at the README's profile
+instructions. Managed settings on the host are never touched; `render` reports
+"editable user defaults; host managed settings untouched". Native verification
+runs `claude --version` and the stub-driven probe with explicit sandbox
+settings passed through `--settings`, so it tests the mechanism rather than
+the editable defaults; it does not read `claude sandbox status`.
 
 ## Limits, in the README's terms
 
 * **Only Bash is sandboxed.** Read, Edit, Glob and Grep follow permission
   rules, which the managed policy sets. WebFetch, WebSearch and MCP run in
   Claude Code's own process; MCP is disabled, the web tools are not.
-* **Unix sockets are not blocked on Linux** without the optional seccomp filter
-  from the `@anthropic-ai/sandbox-runtime` npm package, which the recipe does
-  not install. The guest has no agent socket, Docker socket or Incus socket
-  reachable by `dev`; the existing verifier checks keep proving that. Codex's
-  `vm_dev` profile allows Unix sockets too.
+* **Unix sockets are blocked only by the seccomp filter.** Claude Code 2.1.263
+  bundles that filter, and it applies once the bwrap AppArmor profile is in
+  place; the verifier does not probe sockets. The guest has no agent socket,
+  Docker socket or Incus socket reachable by `dev`; the existing verifier
+  checks keep proving that. Codex's `vm_dev` profile allows Unix sockets.
 * **`excludedCommands` has no managed lock.** A user or project file can add
   commands that run outside the sandbox. The OS account, not the sandbox, is
   the boundary the README already claims; treat additions like startup-file

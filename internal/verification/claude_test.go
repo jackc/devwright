@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"dev-sandbox/internal/claudepolicy"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -125,6 +127,11 @@ func TestMessageStubProtocol(t *testing.T) {
 	if len(results) != 2 || results[0] != "PASS text" || results[1] != "part one part two" {
 		t.Fatalf("tool results: %q", results)
 	}
+	// A retried request carries the same history and must not duplicate it.
+	post(t, stub.url()+"/v1/messages", `{"model":"stub-model","stream":true,"messages":[{"role":"user","content":"x"},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_stub","content":"PASS text"},{"type":"tool_result","tool_use_id":"toolu_stub","content":"part one part two"}]}]}`)
+	if results := stub.toolResults(); len(results) != 2 {
+		t.Fatalf("retry duplicated results: %q", results)
+	}
 	if response, err := http.Get(stub.url() + "/v1/messages"); err != nil || response.StatusCode != http.StatusNotFound {
 		t.Fatalf("GET: %v %v", response, err)
 	}
@@ -143,6 +150,10 @@ func TestClaudeHelper(t *testing.T) {
 	for len(args) > 0 && args[0] != "--" {
 		args = args[1:]
 	}
+	if len(args) == 0 {
+		os.Stderr.WriteString("fake claude invoked without its wrapper script\n")
+		os.Exit(2)
+	}
 	args = args[1:]
 	mode := os.Getenv("TEST_CLAUDE_MODE")
 	if len(args) > 0 && args[0] == "--version" {
@@ -154,13 +165,28 @@ func TestClaudeHelper(t *testing.T) {
 		os.Exit(0)
 	}
 	override := false
+	seen := map[string]bool{}
 	for _, arg := range args {
+		seen[arg] = true
 		if arg == "--settings" {
 			override = true
 		}
 	}
+	// Bind the session contract: print mode with the Bash tool pre-approved,
+	// JSON output, and the workspace as the working directory.
+	for _, required := range []string{"-p", "--bare", "--allowedTools", "Bash", "--max-turns", "--output-format", "json"} {
+		if !seen[required] {
+			os.Stderr.WriteString("missing required argument " + required + "\n")
+			os.Exit(2)
+		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil || filepath.Base(cwd) != "workspace" || os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Join(filepath.Dir(cwd), "config") {
+		os.Stderr.WriteString("unexpected working directory or config dir\n")
+		os.Exit(2)
+	}
 	base := os.Getenv("ANTHROPIC_BASE_URL")
-	if base == "" || os.Getenv("ANTHROPIC_API_KEY") != "synthetic-key" || os.Getenv("CLAUDE_CONFIG_DIR") == "" || os.Getenv("SSH_AUTH_SOCK") != "" {
+	if base == "" || os.Getenv("ANTHROPIC_API_KEY") != "synthetic-key" || os.Getenv("SSH_AUTH_SOCK") != "" || os.Getenv("HTTPS_PROXY") != "" || os.Getenv("CLAUDE_CODE_USE_BEDROCK") != "" {
 		os.Stderr.WriteString("unexpected environment\n")
 		os.Exit(2)
 	}
@@ -194,12 +220,19 @@ func TestClaudeHelper(t *testing.T) {
 		os.Stderr.WriteString("no probe command in first turn\n")
 		os.Exit(2)
 	}
+	parts := strings.Split(strings.TrimSuffix(command, "'"), "' '")
+	// The real probe writes into the workspace; mirror that so cleanup is exercised.
+	os.WriteFile("workspace-write-ok", []byte("ok"), 0600)
 	text := "PASS Claude Code workspace write, outside-workspace write denial, and managed secret read denial\n"
+	if strings.Contains(command, " claude-probe - ") {
+		text = "PASS Claude Code workspace write and outside-workspace write denial\n"
+	}
 	switch {
 	case mode == "probe-failure", mode == "override-accepted" && override:
 		text = "managed deny-read did not hold\nExit code 1"
+	case mode == "no-probe":
+		text = "Error: sandbox failed to start\nExit code 1"
 	case mode == "sibling-changed":
-		parts := strings.Split(strings.TrimSuffix(command, "'"), "' '")
 		os.WriteFile(parts[len(parts)-1], []byte("changed"), 0600)
 	}
 	body, _ := json.Marshal(map[string]any{"model": "stub-model", "stream": true, "messages": []any{
@@ -226,24 +259,38 @@ func fakeClaude(t *testing.T, mode string) string {
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "claude")
-	script := "#!/bin/sh\nexec " + quoteArg(executable) + " -test.run='^TestClaudeHelper$' -- \"$@\"\n"
+	// The verifier passes an allow-listed environment, so the wrapper sets the
+	// helper's own variables itself. Proxy and provider variables exported
+	// here must not reach the session.
+	script := "#!/bin/sh\nDEV_SANDBOX_CLAUDE_HELPER=1 TEST_CLAUDE_MODE=" + quoteArg(mode) + " exec " + quoteArg(executable) + " -test.run='^TestClaudeHelper$' -- \"$@\"\n"
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DEV_SANDBOX_CLAUDE_HELPER", "1")
-	t.Setenv("TEST_CLAUDE_MODE", mode)
+	t.Setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "1")
 	return path
 }
 
-func TestClaudeSessionThroughStub(t *testing.T) {
-	if _, err := startStub("x"); err != nil {
+// requireLoopback skips a test where loopback listeners are refused, without
+// leaving a probe listener open.
+func requireLoopback(t *testing.T) {
+	t.Helper()
+	stub, err := startStub("x")
+	if err != nil {
 		t.Skipf("loopback listener unavailable: %v", err)
 	}
+	stub.close()
+}
+
+func TestClaudeSessionThroughStub(t *testing.T) {
+	requireLoopback(t)
 	claude := fakeClaude(t, "success")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	work := t.TempDir()
-	run, err := runClaudeSession(ctx, claude, work, filepath.Join(work, "config"), "'/x/verify' claude-probe '/x/canary' '/x/sibling'")
+	fixture := t.TempDir()
+	work := filepath.Join(fixture, "workspace")
+	os.Mkdir(work, 0700)
+	run, err := runClaudeSession(ctx, claude, work, filepath.Join(fixture, "config"), "'/x/verify' claude-probe '/x/canary' '/x/sibling'")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,10 +300,8 @@ func TestClaudeSessionThroughStub(t *testing.T) {
 }
 
 func TestClaudeSandboxFixturesCleanedOnSuccessAndFailure(t *testing.T) {
-	if _, err := startStub("x"); err != nil {
-		t.Skipf("loopback listener unavailable: %v", err)
-	}
-	for _, mode := range []string{"success", "probe-failure", "override-accepted", "sibling-changed"} {
+	requireLoopback(t)
+	for mode, want := range map[string]string{"success": "", "probe-failure": "enforcement failed", "override-accepted": "lower-scope allowRead override", "sibling-changed": "Outside-workspace file changed", "no-probe": "did not run to completion"} {
 		t.Run(mode, func(t *testing.T) {
 			home := t.TempDir()
 			if err := os.Mkdir(filepath.Join(home, "projects"), 0700); err != nil {
@@ -267,6 +312,9 @@ func TestClaudeSandboxFixturesCleanedOnSuccessAndFailure(t *testing.T) {
 			err := claudeSandboxCheck(claude, home, &out)
 			if (err == nil) != (mode == "success") {
 				t.Fatalf("mode %s: %v", mode, err)
+			}
+			if err != nil && !strings.Contains(err.Error(), want) {
+				t.Fatalf("mode %s diagnosed as %q, want %q", mode, err, want)
 			}
 			if mode == "success" && !strings.Contains(out.String(), "PASS managed read denial holds") {
 				t.Fatalf("output: %s", out.String())
@@ -289,9 +337,7 @@ func TestClaudeSandboxFixturesCleanedOnSuccessAndFailure(t *testing.T) {
 }
 
 func TestNativeClaudeCheckFixtures(t *testing.T) {
-	if _, err := startStub("x"); err != nil {
-		t.Skipf("loopback listener unavailable: %v", err)
-	}
+	requireLoopback(t)
 	for _, mode := range []string{"success", "probe-failure"} {
 		home := t.TempDir()
 		os.Mkdir(filepath.Join(home, "projects"), 0700)
@@ -299,6 +345,9 @@ func TestNativeClaudeCheckFixtures(t *testing.T) {
 		err := nativeClaudeCheck(fakeClaude(t, mode), home, "/x/verify", &out)
 		if (err == nil) != (mode == "success") {
 			t.Fatalf("mode %s: %v", mode, err)
+		}
+		if mode == "success" && !strings.Contains(out.String(), "PASS Claude Code workspace write and outside-workspace write denial") {
+			t.Fatalf("native PASS line: %s", out.String())
 		}
 		entries, _ := os.ReadDir(home)
 		for _, entry := range entries {
@@ -339,5 +388,63 @@ func TestClaudeProbeOutcomes(t *testing.T) {
 	}
 	if err := ClaudeProbe("-", filepath.Join(dir, "writable-outside"), io.Discard); err == nil {
 		t.Fatal("accepted a writable outside-workspace path")
+	}
+}
+
+func TestProbeRunClassification(t *testing.T) {
+	pass := "PASS Claude Code workspace write, outside-workspace write denial, and managed secret read denial\n"
+	for _, tc := range []struct {
+		name     string
+		run      claudeRun
+		override bool
+		want     string
+	}{
+		{"pass", claudeRun{results: []string{pass}, subtype: "success"}, false, ""},
+		{"override pass", claudeRun{results: []string{pass}, subtype: "success"}, true, ""},
+		{"lock bypass", claudeRun{results: []string{"managed deny-read did not hold\nExit code 1"}, subtype: "success"}, true, "lower-scope allowRead override"},
+		{"first-run deny failure", claudeRun{results: []string{"managed deny-read did not hold\nExit code 1"}, subtype: "success"}, false, "enforcement failed"},
+		{"sibling failure", claudeRun{results: []string{"outside-workspace write denial did not hold: <nil>\nExit code 1"}, subtype: "success"}, true, "enforcement failed"},
+		{"sandbox did not start", claudeRun{results: []string{"apply-seccomp: Permission denied\nExit code 1"}, subtype: "success"}, true, "did not run to completion"},
+		{"error subtype", claudeRun{results: []string{pass}, subtype: "error_max_turns"}, false, "did not run to completion"},
+		{"no result", claudeRun{subtype: "success"}, false, "did not run to completion"},
+	} {
+		err := checkProbeRun(tc.run, tc.override)
+		if (err == nil) != (tc.want == "") || (err != nil && !strings.Contains(err.Error(), tc.want)) {
+			t.Fatalf("%s: %v, want %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+func TestSandboxProfileState(t *testing.T) {
+	dir := t.TempDir()
+	apparmor := filepath.Join(dir, "apparmor.d")
+	os.MkdirAll(filepath.Join(apparmor, "disable"), 0755)
+	sum := filepath.Join(dir, "bwrap-profile.sha256")
+	sysctl := filepath.Join(dir, "restrict")
+	var out bytes.Buffer
+	if err := checkSandboxProfile(&out, apparmor, sum, sysctl); err != nil || !strings.Contains(out.String(), "NOT TESTED") {
+		t.Fatalf("without AppArmor: %v %s", err, out.String())
+	}
+	profile := "profile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n}\n"
+	os.WriteFile(filepath.Join(apparmor, "bwrap"), []byte(profile), 0644)
+	os.WriteFile(sum, []byte(fmt.Sprintf("%x  /etc/apparmor.d/bwrap\n", sha256.Sum256([]byte(profile)))), 0644)
+	os.WriteFile(sysctl, []byte("1\n"), 0644)
+	os.WriteFile(filepath.Join(apparmor, "bwrap-userns-restrict"), []byte("stock"), 0644)
+	if err := checkSandboxProfile(&out, apparmor, sum, sysctl); err == nil {
+		t.Fatal("accepted enabled stock profile")
+	}
+	os.Symlink(filepath.Join(apparmor, "bwrap-userns-restrict"), filepath.Join(apparmor, "disable", "bwrap-userns-restrict"))
+	out.Reset()
+	if err := checkSandboxProfile(&out, apparmor, sum, sysctl); err != nil || !strings.Contains(out.String(), "PASS bwrap AppArmor profile") {
+		t.Fatalf("provisioned state: %v %s", err, out.String())
+	}
+	os.WriteFile(sysctl, []byte("0\n"), 0644)
+	if err := checkSandboxProfile(&out, apparmor, sum, sysctl); err == nil {
+		t.Fatal("accepted disabled user namespace restriction")
+	}
+	os.WriteFile(sysctl, []byte("1\n"), 0644)
+	os.WriteFile(filepath.Join(apparmor, "bwrap"), []byte(profile+"  capability,\n"), 0644)
+	if err := checkSandboxProfile(&out, apparmor, sum, sysctl); err == nil {
+		t.Fatal("accepted edited profile")
 	}
 }

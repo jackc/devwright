@@ -182,7 +182,7 @@ func TestUserOfflineRender(t *testing.T) {
 		t.Fatal(v)
 	}
 	provisioning, ok := v["provisioning"].(map[string]any)
-	if !ok || provisioning["run_as"] != "dsb-example" || provisioning["config_source"] != "built-in editable defaults" || provisioning["claude_config_source"] != "built-in editable defaults" {
+	if !ok || provisioning["run_as"] != "dsb-example" || provisioning["config_source"] != "built-in editable defaults" || provisioning["claude_config_source"] != "built-in editable defaults" || provisioning["claude"] != "latest release in ~/.local/bin" {
 		t.Fatal(v)
 	}
 }
@@ -191,7 +191,7 @@ func TestHelperValidation(t *testing.T) {
 	if err := validateUserRequest(good); err != nil {
 		t.Fatal(err)
 	}
-	for _, mutate := range []func(*userRequest){func(r *userRequest) { r.Name = "../root" }, func(r *userRequest) { r.Action = "exec" }, func(r *userRequest) { r.PublicKey += "\ncommand=bad" }, func(r *userRequest) { r.PublicKey = "ssh-rsa junk" }, func(r *userRequest) { r.PublicKey = "" }, func(r *userRequest) { r.Config = []byte("[broken") }, func(r *userRequest) { r.ClaudeConfig = []byte("[]") }, func(r *userRequest) { r.Repository = "https://example.invalid/dotfiles"; r.Installer = "../../root" }, func(r *userRequest) { r.Port = 65536 }, func(r *userRequest) { r.RemoveHome = true }} {
+	for _, mutate := range []func(*userRequest){func(r *userRequest) { r.Name = "../root" }, func(r *userRequest) { r.Action = "exec" }, func(r *userRequest) { r.PublicKey += "\ncommand=bad" }, func(r *userRequest) { r.PublicKey = "ssh-rsa junk" }, func(r *userRequest) { r.PublicKey = "" }, func(r *userRequest) { r.Config = []byte("[broken") }, func(r *userRequest) { r.ClaudeConfig = []byte("[]") }, func(r *userRequest) { r.ClaudeConfig = []byte(`{"sandbox":{"enabled":"yes"}}`) }, func(r *userRequest) { r.Repository = "https://example.invalid/dotfiles"; r.Installer = "../../root" }, func(r *userRequest) { r.Port = 65536 }, func(r *userRequest) { r.RemoveHome = true }} {
 		r := good
 		mutate(&r)
 		if err := validateUserRequest(r); err == nil {
@@ -342,5 +342,28 @@ func TestDarwinAdministrativeACLs(t *testing.T) {
 		if readOnlyDarwinACL(" 0: user:fixture allow read," + permission + "\n") {
 			t.Fatalf("accepted ACL permission %s", permission)
 		}
+	}
+}
+
+func TestLinuxSandboxPolicyPreflight(t *testing.T) {
+	dir := t.TempDir()
+	sysctl, profiles := filepath.Join(dir, "restrict"), filepath.Join(dir, "profiles")
+	if err := checkLinuxSandboxPolicy(sysctl, profiles); err != nil {
+		t.Fatalf("no AppArmor restriction: %v", err)
+	}
+	os.WriteFile(sysctl, []byte("0\n"), 0600)
+	if err := checkLinuxSandboxPolicy(sysctl, profiles); err != nil {
+		t.Fatalf("restriction off: %v", err)
+	}
+	os.WriteFile(sysctl, []byte("1\n"), 0600)
+	for _, loaded := range []string{"", "bwrap (enforce)\nunpriv_bwrap (enforce)\n", "lsb_release (enforce)\n"} {
+		os.WriteFile(profiles, []byte(loaded), 0600)
+		if err := checkLinuxSandboxPolicy(sysctl, profiles); err == nil || !strings.Contains(err.Error(), "bwrap profile") {
+			t.Fatalf("accepted %q: %v", loaded, err)
+		}
+	}
+	os.WriteFile(profiles, []byte("lsb_release (enforce)\nbwrap (unconfined)\n"), 0600)
+	if err := checkLinuxSandboxPolicy(sysctl, profiles); err != nil {
+		t.Fatalf("documented profile: %v", err)
 	}
 }

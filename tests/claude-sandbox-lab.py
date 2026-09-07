@@ -21,11 +21,14 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import socketserver
 import subprocess
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+MARKER = ".claude-sandbox-lab"
 
 PROBE = r"""#!/bin/sh
 echo "PROBE write-cwd: $(touch ./workspace-write-ok 2>/dev/null && echo ok || echo DENIED)"
@@ -143,8 +146,28 @@ def lab_settings(base_file, canary):
     if not base_file:
         sandbox["network"] = {"allowedDomains": []}
     permissions = settings.setdefault("permissions", {})
-    permissions.setdefault("deny", []).append("Read(%s)" % canary)
+    # A single leading slash is relative to the settings file; "//" is absolute.
+    permissions.setdefault("deny", []).append("Read(/%s)" % canary)
     return settings
+
+
+def inside(path, root):
+    root = os.path.realpath(root)
+    return path == root or path.startswith(root + os.sep)
+
+
+def temp_roots():
+    roots = ["/tmp", "/private/tmp", "/var/folders", "/private/var/folders"]
+    if os.environ.get("TMPDIR"):
+        roots.append(os.environ["TMPDIR"])
+    return roots
+
+
+def scrubbed_environment():
+    # Match the verifier: only the variables a session needs; credentials,
+    # proxies, and provider selectors from the shell stay out.
+    keep = {"HOME", "PATH", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TZ"}
+    return {key: value for key, value in os.environ.items() if key in keep}
 
 
 def main():
@@ -155,17 +178,24 @@ def main():
     args = parser.parse_args()
 
     checkout = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    fixture = os.path.abspath(args.fixture or os.path.join(checkout, ".build", "claude-sandbox-lab"))
-    if fixture.startswith(("/tmp/", "/private/tmp/")):
-        sys.exit("fixture must not live under /tmp; the sandbox leaves temp directories writable")
+    fixture = os.path.realpath(args.fixture or os.path.join(checkout, ".build", "claude-sandbox-lab"))
+    for root in temp_roots():
+        if inside(fixture, root):
+            sys.exit("fixture must not live under %s; the sandbox leaves temp directories writable" % root)
     if os.environ.get("CLAUDECODE"):
         sys.exit("run this lab from a terminal, not inside an agent session")
     if shutil.which("claude") is None:
         sys.exit("claude is not on PATH")
 
-    shutil.rmtree(fixture, ignore_errors=True)
+    # Only remove a directory this lab created earlier; never an arbitrary path.
+    if os.path.lexists(fixture):
+        if not os.path.isdir(fixture) or os.path.islink(fixture) or not os.path.exists(os.path.join(fixture, MARKER)):
+            sys.exit("refusing to remove %s: not a fixture created by this lab" % fixture)
+        shutil.rmtree(fixture)
     workspace = os.path.join(fixture, "workspace")
     os.makedirs(workspace, mode=0o700)
+    with open(os.path.join(fixture, MARKER), "w") as handle:
+        handle.write("claude-sandbox-lab fixture\n")
     canary = os.path.join(fixture, "canary-secret")
     sibling = os.path.join(fixture, "sibling")
     probe = os.path.join(fixture, "probe.sh")
@@ -197,7 +227,7 @@ def main():
     server = Stub(("127.0.0.1", 0), make_handler(command, results))
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "SSH_AUTH_SOCK")}
+    env = scrubbed_environment()
     env.update({
         "ANTHROPIC_API_KEY": "synthetic-key",
         "ANTHROPIC_BASE_URL": "http://127.0.0.1:%d" % server.server_port,
@@ -210,24 +240,37 @@ def main():
     argv = ["claude", "-p", "--bare", "--model", "stub-model", "--settings", settings_path,
             "--allowedTools", "Bash", "--max-turns", "3",
             "--output-format", "json", "Run the sandbox lab probe."]
+    stdout, stderr, returncode, timed_out = "", "", None, False
     try:
-        completed = subprocess.run(argv, cwd=workspace, env=env, stdin=subprocess.DEVNULL,
-                                   capture_output=True, text=True, timeout=180)
+        # A new session lets a timeout kill the sandboxed descendants too.
+        process = subprocess.Popen(argv, cwd=workspace, env=env, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=180)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+        returncode = process.returncode
     finally:
         server.shutdown()
+        server.server_close()
     with open(os.path.join(fixture, "claude.out"), "w") as handle:
-        handle.write(completed.stdout)
+        handle.write(stdout)
     with open(os.path.join(fixture, "claude.err"), "w") as handle:
-        handle.write(completed.stderr)
+        handle.write(stderr)
 
     failed = False
     try:
-        result = json.loads(completed.stdout.strip().splitlines()[-1])
+        result = json.loads(stdout.strip().splitlines()[-1])
         ok = result.get("subtype") == "success" and result.get("result") == "STUB-DONE"
     except (ValueError, IndexError):
         ok = False
-    print("%s claude -p completed through the stub (exit %d)" % ("PASS" if ok else "FAIL", completed.returncode))
-    failed |= not ok
+    if timed_out:
+        print("FAIL claude -p timed out after 180s; descendants killed")
+    else:
+        print("%s claude -p completed through the stub (exit %d)" % ("PASS" if ok else "FAIL", returncode))
+    failed |= not ok or timed_out
     if not results:
         print("FAIL no Bash tool result reached the stub; see %s" % os.path.join(fixture, "claude.err"))
         failed = True
@@ -257,7 +300,7 @@ def main():
     if args.keep or failed:
         print("Fixture retained: %s" % fixture)
     else:
-        shutil.rmtree(fixture, ignore_errors=True)
+        shutil.rmtree(fixture)
     sys.exit(1 if failed else 0)
 
 

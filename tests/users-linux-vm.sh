@@ -22,7 +22,10 @@ mise run guest
 case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64) arch=amd64 ;; *) exit 1 ;; esac
 mise exec -- env CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "$work/dev-sandbox" ./cmd/dev-sandbox
 limactl start --name=users-test --mount-none --containerd=none --cpus=2 --memory=4 --disk=20 --tty=false template:ubuntu-26.04
-limactl shell users-test sudo /bin/bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git openssh-server sudo bubblewrap apparmor zsh gh && systemctl enable --now ssh'
+limactl shell users-test sudo /bin/bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git openssh-server sudo bubblewrap apparmor socat zsh gh && systemctl enable --now ssh'
+# The native backend changes no host security policy: install the bwrap
+# AppArmor profile the README lists as a Linux prerequisite for Claude Code.
+limactl shell users-test sudo /bin/bash -c 'set -eu; mkdir -p /etc/apparmor.d/disable; if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/bwrap-userns-restrict; apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict 2>/dev/null || true; fi; printf "%s\n" "abi <abi/5.0>," "include <tunables/global>" "" "profile bwrap /usr/bin/bwrap flags=(unconfined) {" "  userns," "" "  include if exists <local/bwrap>" "}" > /etc/apparmor.d/bwrap; apparmor_parser -r /etc/apparmor.d/bwrap'
 # Lima's boot setup replaces the image's default host keys. Give this disposable
 # host an explicit persistent key before snapshotting/testing the native backend.
 limactl shell users-test sudo /bin/bash -c 'set -eu; install -d -m 700 /var/lib/dev-sandbox-test; ssh-keygen -q -t ed25519 -N "" -f /var/lib/dev-sandbox-test/ssh_host_ed25519_key; printf "HostKey /var/lib/dev-sandbox-test/ssh_host_ed25519_key\n" > /etc/ssh/sshd_config.d/01-native-test-hostkey.conf; /usr/sbin/sshd -t && systemctl reload ssh'

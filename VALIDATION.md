@@ -70,9 +70,30 @@ afterwards. Existing VMs were not touched.
   manual `ssh -l root` reuses an open `dev` session; the CLI's per-user control
   path avoids this, and manual root access needs `-o ControlPath=none`.
 
-Not yet run: Incus containers with Claude Code, the native-user installer flow,
-and every authenticated behavior. Existing VMs need `configure` with the rebuilt
-CLI before `verify` can check Claude Code.
+A code review of the branch (15 findings) was applied the same day: the
+provisioning script gained shared `install_managed_policy` and
+`install_user_config` functions, a refusal of symlinked dev dot-directories
+before `install -d`, and an AppArmor step that runs only when AppArmor is
+present and records the installed profile's checksum; the verifier now runs
+probe sessions with an allow-listed environment, distinguishes a session that
+never ran the probe from a real enforcement failure, keeps only the latest
+tool results across retried requests, and checks the bwrap profile checksum,
+the disabled stock profile, and the user-namespace sysctl; `--claude-config`
+files get the same typed validation as the managed file; the Linux user
+backend refuses to create accounts until the documented bwrap profile is
+loaded and the README lists the commands; the Linux acceptance VM installs
+socat and that profile; `render` reports the latest channel; the lab refuses
+to delete directories it did not create, rejects fixtures under temp roots
+including macOS's, handles a timeout by killing the session's process group,
+and writes its Read rule in the absolute `//` form. Go tests, the race run,
+both host lab runs, and a fresh disposable VM `create` followed by `verify`
+passed afterwards, with the new `PASS bwrap AppArmor profile` line present;
+that VM was deleted.
+
+Not yet run: Incus containers with Claude Code, the native-user installer flow
+on a Linux host with the profile installed, and every authenticated behavior.
+Existing VMs need `configure` with the rebuilt CLI before `verify` can check
+Claude Code.
 
 ## Native restricted accounts using system SSH
 
@@ -295,6 +316,9 @@ then created `final-container` using the default 4 CPUs, 4 GiB memory, and
 isolated UID/GID mappings, and nested namespaces. Both completed creation,
 SSH bootstrap, installation of Codex 0.153.4, and the full guest acceptance
 suite. No AppArmor restrictions were disabled or custom profiles installed.
+(Superseded on September 6, 2026: the recipe now installs the bwrap AppArmor
+profile described in the Claude Code controls section; Incus containers have
+not been rerun with it.)
 
 The tested commands include:
 
@@ -556,7 +580,9 @@ Ubuntu 26.04 supplies `/etc/apparmor.d/bwrap-userns-restrict`. The previous
 custom profile caused conflicting attachments for `/usr/bin/bwrap`, preventing
 sandbox startup. The custom profile and all provisioning logic for it have now
 been removed. New VMs rely solely on Ubuntu 26.04's packaged profile; there is no
-older-image fallback or migration logic. The 26.04 test confirmed the custom profile
+older-image fallback or migration logic. (Superseded on September 6, 2026: the
+Claude Code controls section records why the recipe now disables that packaged
+profile and installs Anthropic's documented one.) The 26.04 test confirmed the custom profile
 was absent and `kernel.apparmor_restrict_unprivileged_userns` remained `1`.
 
 Host tests (16 tests / 58 assertions), Bash syntax, Lima template validation,
@@ -663,6 +689,8 @@ After explicit user approval, a VM-only custom AppArmor profile was installed
 and the sandbox checks succeeded. That historical 24.04 workaround has since
 been removed from this project; it is preserved in earlier commits only.
 Ubuntu's global unprivileged-user-namespace restriction was not disabled.
+(Superseded on September 6, 2026: see the Claude Code controls section for the
+profile the recipe installs today.)
 
 ## Remaining user-dependent checks
 
