@@ -43,7 +43,7 @@ class Devwright < Formula
   end
 
   test do
-    assert_match "devwright $version", shell_output("#{bin}/devwright --version")
+    assert_match "devwright $version", shell_output("#{bin}/devwright version")
     assert_equal true, JSON.parse(shell_output("#{bin}/devwright render"))["plain"]
   end
 end

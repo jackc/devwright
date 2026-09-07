@@ -102,7 +102,11 @@ limactl start dev
 explicitly replaced; run it while development tools are idle. Restarting an
 environment does not update or reconfigure it. Use Lima or Incus for VM/container
 start, stop, and delete operations; native accounts use `devwright delete`.
-Run `devwright --help` for all commands and options.
+Run `devwright --help` to list commands.
+
+Command-specific flags follow the subcommand (for example,
+`devwright create dev --cpus 8`). Use `devwright COMMAND --help` to see its options.
+The global `--backend` flag can appear before or after the subcommand.
 
 ## More information
 

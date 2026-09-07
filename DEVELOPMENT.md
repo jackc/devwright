@@ -8,9 +8,9 @@ operation, see [backend setup](docs/backends.md) and
 
 ## Build, check, and release
 
-The host CLI uses `go-toml/v2` to parse custom configuration; the Linux verifier
-uses `golang.org/x/sys` for filesystem access checks. Versions and checksums are
-recorded in `go.mod` and `go.sum`. The build toolchain is pinned in `mise.toml`,
+The host CLI uses Cobra for commands and flags and `go-toml/v2` to parse custom
+configuration; the Linux verifier uses `golang.org/x/sys` for filesystem access
+checks. Versions and checksums are recorded in `go.mod` and `go.sum`. The build toolchain is pinned in `mise.toml`,
 which local development and GitHub Actions both use; `go.mod` records the minimum
 supported Go version. Builds use Bash and gzip; tests use Go, Git, Bash, Python 3, and
 OpenSSH with synthetic data and temporary directories.

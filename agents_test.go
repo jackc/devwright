@@ -23,7 +23,7 @@ func TestCodexOptions(t *testing.T) {
 			t.Fatalf("accepted %v", args)
 		}
 	}
-	if _, err := parseOptions([]string{"--codex-requirements", "policy", "configure", "--codex-config", "config", "--replace-codex-config"}); err != nil {
+	if _, err := parseOptions([]string{"configure", "--codex-requirements", "policy", "--codex-config", "config", "--replace-codex-config"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -58,7 +58,7 @@ func TestClaudeOptions(t *testing.T) {
 			t.Fatalf("accepted %v", args)
 		}
 	}
-	if _, err := parseOptions([]string{"--claude-managed-settings", "policy", "configure", "--claude-config", "config", "--replace-claude-config"}); err != nil {
+	if _, err := parseOptions([]string{"configure", "--claude-managed-settings", "policy", "--claude-config", "config", "--replace-claude-config"}); err != nil {
 		t.Fatal(err)
 	}
 }

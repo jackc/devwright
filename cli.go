@@ -3,7 +3,6 @@ package devwright
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,39 +11,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
-
-const usage = `Usage: devwright ACTION [NAME] [OPTIONS]
-Actions: render, create, configure, verify, ssh-config, install-ssh
-User backend only: list, shell, delete (delete requires an explicit NAME)
-Default environment: dev
-
-Options (may appear before or after the action):
-  --backend lima|incus|user  Boundary manager (default: lima)
-  --ssh-port N            Existing system SSH port (user create/configure/render; default: 22)
-  --remove-home           Delete the managed home instead of archiving it (user delete)
-  --container             Create an Incus system container instead of a VM (create/render)
-  --network NAME          Incus managed network (default: incusbr0; create/render)
-  --storage NAME          Incus storage pool (default: default; create/render)
-  --dotfiles-repo URL      Install this Git repository for root and dev (create/configure)
-  --dotfiles-install PATH  Installer relative to the repository (default: install)
-  --codex-requirements FILE  Use and remember a custom managed policy (create/configure)
-  --reset-codex-requirements Restore the embedded managed policy (configure)
-  --codex-config FILE      Initial dev config; existing config is preserved (create/configure)
-  --replace-codex-config   Replace existing dev config with --codex-config (configure)
-  --claude-managed-settings FILE  Use and remember a custom managed Claude Code policy (create/configure)
-  --reset-claude-managed-settings Restore the embedded managed Claude Code policy (configure)
-  --claude-config FILE     Initial dev Claude Code settings; existing settings are preserved (create/configure)
-  --replace-claude-config  Replace existing dev Claude Code settings with --claude-config (configure)
-  --cpus N                CPUs for a new VM (default: 4; create/render only)
-  --memory SIZE           Memory for a new VM, e.g. 8GiB (default: 4GiB; create/render only)
-  --disk SIZE             Disk for a new VM, e.g. 100GiB (default: 60GiB; create/render only)
-  --version               Print the CLI/embedded recipe version
-  -h, --help              Show this help
-
-Use limactl or incus start/stop/delete for lifecycle; ssh lima-NAME or incus-NAME for development.
-Incus uses the local server's default project. Repeat --backend incus on every action.
-`
 
 type options struct {
 	codexRequirements, codexConfig                            string
@@ -59,84 +29,136 @@ type options struct {
 	container                                                 bool
 	sshPort                                                   int
 	removeHome                                                bool
-	help, version                                             bool
 	set                                                       map[string]bool
 }
 
 var validName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 var validSize = regexp.MustCompile(`^[1-9][0-9]*(MiB|GiB|TiB)$`)
 
-func parseOptions(args []string) (options, error) {
+// newCLI constructs fresh commands and flag storage for each invocation.
+func newCLI(version string, execute func(context.Context, options) error) *cobra.Command {
 	o := options{name: "dev", set: map[string]bool{}}
-	f := flag.NewFlagSet("devwright", flag.ContinueOnError)
-	f.SetOutput(io.Discard)
-	f.BoolVar(&o.help, "help", false, "")
-	f.BoolVar(&o.help, "h", false, "")
-	f.BoolVar(&o.version, "version", false, "")
-	f.StringVar(&o.backend, "backend", "lima", "")
-	f.IntVar(&o.sshPort, "ssh-port", 22, "")
-	f.BoolVar(&o.removeHome, "remove-home", false, "")
-	f.BoolVar(&o.container, "container", false, "")
-	f.StringVar(&o.network, "network", "incusbr0", "")
-	f.StringVar(&o.storage, "storage", "default", "")
-	f.StringVar(&o.dotfilesRepo, "dotfiles-repo", "", "")
-	f.StringVar(&o.dotfilesInstall, "dotfiles-install", "install", "")
-	f.StringVar(&o.codexRequirements, "codex-requirements", "", "")
-	f.StringVar(&o.codexConfig, "codex-config", "", "")
-	f.BoolVar(&o.resetCodexRequirements, "reset-codex-requirements", false, "")
-	f.BoolVar(&o.replaceCodexConfig, "replace-codex-config", false, "")
-	f.StringVar(&o.claudeManagedSettings, "claude-managed-settings", "", "")
-	f.StringVar(&o.claudeConfig, "claude-config", "", "")
-	f.BoolVar(&o.resetClaudeManagedSettings, "reset-claude-managed-settings", false, "")
-	f.BoolVar(&o.replaceClaudeConfig, "replace-claude-config", false, "")
-	f.IntVar(&o.cpus, "cpus", 0, "")
-	f.StringVar(&o.memory, "memory", "", "")
-	f.StringVar(&o.disk, "disk", "", "")
-	var positional []string
-	// flag stops at the first positional argument; resume parsing to retain the
-	// previous CLI's support for options on either side of ACTION and NAME.
-	for len(args) > 0 {
-		if args[0] == "--" {
-			positional = append(positional, args[1:]...)
-			break
-		}
-		if args[0] == "-" || !strings.HasPrefix(args[0], "-") {
-			positional = append(positional, args[0])
-			args = args[1:]
-			continue
-		}
-		key, _, hasValue := strings.Cut(strings.TrimLeft(args[0], "-"), "=")
-		count := 1
-		if entry := f.Lookup(key); entry != nil && !hasValue {
-			boolean, ok := entry.Value.(interface{ IsBoolFlag() bool })
-			if (!ok || !boolean.IsBoolFlag()) && len(args) > 1 {
-				count = 2
-			}
-		}
-		if err := f.Parse(args[:count]); err != nil {
-			return o, err
-		}
-		args = args[count:]
+	root := &cobra.Command{
+		Use:           "devwright",
+		Short:         "Set up development environments with Lima, Incus, or native users",
+		Long:          "Set up development environments with Lima, Incus, or native users.\n\nDefault environment: dev. Command-specific options follow the command; --backend may appear before or after it.\nUse limactl or incus start/stop/delete for lifecycle; ssh lima-NAME or incus-NAME for development.\nIncus uses the local server's default project. Repeat --backend incus on every action.",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf("an action is required; use --help\n%s", cmd.UsageString())
+		},
 	}
-	f.Visit(func(f *flag.Flag) { o.set[f.Name] = true })
-	if o.help || o.version {
-		return o, nil
+	root.CompletionOptions.DisableDefaultCmd = true
+	// Only options shared by all environment commands are persistent.
+	f := root.PersistentFlags()
+	f.BoolP("help", "h", false, "Show help for the command")
+	f.StringVar(&o.backend, "backend", "lima", "Boundary manager: lima, incus, or user")
+	root.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the CLI/embedded recipe version",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "devwright %s\n", version)
+			return err
+		},
+	})
+	for _, action := range []struct{ name, short string }{
+		{"render", "Render the environment configuration"},
+		{"create", "Create and configure an environment"},
+		{"configure", "Configure an existing environment"},
+		{"verify", "Verify the environment"},
+		{"ssh-config", "Print SSH configuration"},
+		{"install-ssh", "Install SSH configuration"},
+		{"list", "List environments (user backend only)"},
+		{"shell", "Open an environment shell (user backend only)"},
+		{"delete", "Delete an explicitly named environment (user backend only)"},
+	} {
+		use := action.name + " [NAME]"
+		if action.name == "delete" {
+			use = "delete NAME"
+		} else if action.name == "list" {
+			use = "list"
+		}
+		cmd := &cobra.Command{
+			Use: use, Short: action.short,
+			Args: cobra.MaximumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				o.action = cmd.Name()
+				if len(args) == 1 {
+					o.name = args[0]
+				}
+				cmd.Flags().Visit(func(f *pflag.Flag) { o.set[f.Name] = true })
+				validated, err := validateOptions(o, append([]string{o.action}, args...))
+				if err != nil {
+					return err
+				}
+				return execute(cmd.Context(), validated)
+			},
+		}
+		addCommandFlags(cmd.Flags(), action.name, &o)
+		root.AddCommand(cmd)
 	}
-	if len(positional) < 1 || len(positional) > 2 {
-		return o, errors.New(usage)
+	return root
+}
+
+func addCommandFlags(f *pflag.FlagSet, action string, o *options) {
+	switch action {
+	case "create", "configure", "render":
+		f.IntVar(&o.sshPort, "ssh-port", 22, "Existing system SSH port (user backend only)")
 	}
-	o.action = positional[0]
-	if len(positional) == 2 {
-		o.name = positional[1]
+	switch action {
+	case "delete":
+		f.BoolVar(&o.removeHome, "remove-home", false, "Delete the managed home instead of archiving it (user backend only)")
 	}
+	switch action {
+	case "create", "render":
+		f.BoolVar(&o.container, "container", false, "Create an Incus system container instead of a VM")
+		f.StringVar(&o.network, "network", "incusbr0", "Incus managed network")
+		f.StringVar(&o.storage, "storage", "default", "Incus storage pool")
+		f.IntVar(&o.cpus, "cpus", 0, "CPUs for a new VM (default: 4)")
+		f.StringVar(&o.memory, "memory", "", "Memory for a new VM, e.g. 8GiB (default: 4GiB)")
+		f.StringVar(&o.disk, "disk", "", "Disk for a new VM, e.g. 100GiB (default: 60GiB)")
+	}
+	switch action {
+	case "create", "configure":
+		f.StringVar(&o.dotfilesRepo, "dotfiles-repo", "", "Install this Git repository for root and dev")
+		f.StringVar(&o.dotfilesInstall, "dotfiles-install", "install", "Installer relative to the repository")
+		f.StringVar(&o.codexRequirements, "codex-requirements", "", "Use and remember a custom managed policy")
+		f.StringVar(&o.codexConfig, "codex-config", "", "Initial dev config; existing config is preserved")
+		f.StringVar(&o.claudeManagedSettings, "claude-managed-settings", "", "Use and remember a custom managed Claude Code policy")
+		f.StringVar(&o.claudeConfig, "claude-config", "", "Initial dev Claude Code settings; existing settings are preserved")
+	}
+	switch action {
+	case "configure":
+		f.BoolVar(&o.resetCodexRequirements, "reset-codex-requirements", false, "Restore the embedded managed policy")
+		f.BoolVar(&o.replaceCodexConfig, "replace-codex-config", false, "Replace existing dev config with --codex-config")
+		f.BoolVar(&o.resetClaudeManagedSettings, "reset-claude-managed-settings", false, "Restore the embedded managed Claude Code policy")
+		f.BoolVar(&o.replaceClaudeConfig, "replace-claude-config", false, "Replace existing dev Claude Code settings with --claude-config")
+	}
+}
+
+func parseOptions(args []string) (options, error) {
+	var parsed options
+	cmd := newCLI("dev", func(_ context.Context, o options) error {
+		parsed = o
+		return nil
+	})
+	cmd.SetArgs(args)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := cmd.Execute()
+	if err == nil && parsed.action == "" {
+		err = errors.New("an executable action is required")
+	}
+	return parsed, err
+}
+
+func validateOptions(o options, positional []string) (options, error) {
 	switch o.action {
-	case "render", "create", "configure", "verify", "ssh-config", "install-ssh":
 	case "list", "shell", "delete":
 		if o.backend != "user" {
 			return o, fmt.Errorf("%s applies only to --backend user", o.action)
 		}
-	default:
-		return o, fmt.Errorf("unknown action: %s; use --help", o.action)
 	}
 	if !validName.MatchString(o.name) {
 		return o, errors.New("Environment name must start with a letter and contain only lowercase letters, digits, and hyphens (maximum 40 characters)")
@@ -246,18 +268,17 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 	if len(args) == 1 && args[0] == "__user-helper" {
 		return runUserHelper(ctx, stdin, stdout, stderr)
 	}
-	o, err := parseOptions(args)
-	if err != nil {
-		return err
-	}
-	if o.help {
-		_, err = io.WriteString(stdout, usage)
-		return err
-	}
-	if o.version {
-		_, err = fmt.Fprintf(stdout, "devwright %s\n", version)
-		return err
-	}
+	cmd := newCLI(version, func(ctx context.Context, o options) error {
+		return runOptions(ctx, o, stdin, stdout, stderr)
+	})
+	cmd.SetArgs(args)
+	cmd.SetIn(stdin)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	return cmd.ExecuteContext(ctx)
+}
+
+func runOptions(ctx context.Context, o options, stdin io.Reader, stdout, stderr io.Writer) error {
 	if err := o.loadAgentFiles(); err != nil {
 		return err
 	}
