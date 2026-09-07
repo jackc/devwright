@@ -11,6 +11,6 @@ for dependency in golang.org/x/sys github.com/pelletier/go-toml/v2 github.com/go
     github.com/pelletier/go-toml/v2) name=go-toml ;;
     github.com/google/jsonschema-go) name=jsonschema-go ;;
   esac
-  cp "$module_dir/LICENSE" ".build/release-licenses/$name.txt"
+  cp -f "$module_dir/LICENSE" ".build/release-licenses/$name.txt"
 done
-cp internal/claudepolicy/schema/LICENSE .build/release-licenses/claude-settings-schema.txt
+cp -f internal/claudepolicy/schema/LICENSE .build/release-licenses/claude-settings-schema.txt
