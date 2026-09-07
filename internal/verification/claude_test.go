@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"dev-sandbox/internal/claudepolicy"
+	"devwright/internal/claudepolicy"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -175,7 +175,7 @@ func TestMessageStubProtocol(t *testing.T) {
 // Launch this test binary as a fake claude that speaks to the real stub,
 // then reports a canned sandbox outcome without touching the host sandbox.
 func TestClaudeHelper(t *testing.T) {
-	if os.Getenv("DEV_SANDBOX_CLAUDE_HELPER") != "1" {
+	if os.Getenv("DEVWRIGHT_CLAUDE_HELPER") != "1" {
 		return
 	}
 	args := os.Args
@@ -299,7 +299,7 @@ func fakeClaude(t *testing.T, mode string) string {
 	// The verifier passes an allow-listed environment, so the wrapper sets the
 	// helper's own variables itself. Proxy and provider variables exported
 	// here must not reach the session.
-	script := "#!/bin/sh\nDEV_SANDBOX_CLAUDE_HELPER=1 TEST_CLAUDE_MODE=" + quoteArg(mode) + " exec " + quoteArg(executable) + " -test.run='^TestClaudeHelper$' -- \"$@\"\n"
+	script := "#!/bin/sh\nDEVWRIGHT_CLAUDE_HELPER=1 TEST_CLAUDE_MODE=" + quoteArg(mode) + " exec " + quoteArg(executable) + " -test.run='^TestClaudeHelper$' -- \"$@\"\n"
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}

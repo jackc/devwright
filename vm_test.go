@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"encoding/base64"
@@ -166,7 +166,7 @@ func TestConfigureLifecycle(t *testing.T) {
 		if len(calls) != 2 || calls[0].input != provision || !reflect.DeepEqual(calls[0].args, append(sshArgs(state, "root"), shellJoin([]string{"/bin/bash", "-s"}))) {
 			t.Fatalf("configure ordering: %+v", calls)
 		}
-		if !reflect.DeepEqual(calls[1].args, append(sshArgs(state, "dev"), shellJoin([]string{"/usr/local/share/dev-sandbox/verify"}))) {
+		if !reflect.DeepEqual(calls[1].args, append(sshArgs(state, "dev"), shellJoin([]string{"/usr/local/share/devwright/verify"}))) {
 			t.Fatalf("verify command: %v", calls[1].args)
 		}
 	}

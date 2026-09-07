@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"context"
@@ -156,13 +156,17 @@ func fixtureUserKey() string {
 	return "ssh-ed25519 " + base64.StdEncoding.EncodeToString(b) + " synthetic"
 }
 func TestUserOptions(t *testing.T) {
+	// The account prefix leaves 22 characters within the OS's 32-character limit.
+	if _, err := parseOptions([]string{"create", strings.Repeat("a", 22), "--backend", "user"}); err != nil {
+		t.Fatalf("rejected maximum-length native name: %v", err)
+	}
 	for _, action := range []string{"create", "configure", "verify", "render", "ssh-config", "install-ssh", "shell", "delete"} {
 		o, err := parseOptions([]string{action, "example", "--backend", "user"})
 		if err != nil || o.sshPort != 22 {
 			t.Fatalf("%s: %+v %v", action, o, err)
 		}
 	}
-	for _, args := range [][]string{{"create", "x", "--backend", "user", "--cpus", "2"}, {"create", "x", "--backend", "user", "--memory", "4GiB"}, {"create", "x", "--backend", "user", "--container"}, {"create", "x", "--backend", "user", "--codex-requirements", "x"}, {"configure", "x", "--backend", "user", "--reset-codex-requirements"}, {"create", "x", "--backend", "user", "--claude-managed-settings", "x"}, {"configure", "x", "--backend", "user", "--reset-claude-managed-settings"}, {"delete", "--backend", "user"}, {"list", "x", "--backend", "user"}, {"create", strings.Repeat("a", 29), "--backend", "user"}, {"create", "x", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--ssh-port", "0"}, {"verify", "x", "--backend", "user", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--remove-home"}} {
+	for _, args := range [][]string{{"create", "x", "--backend", "user", "--cpus", "2"}, {"create", "x", "--backend", "user", "--memory", "4GiB"}, {"create", "x", "--backend", "user", "--container"}, {"create", "x", "--backend", "user", "--codex-requirements", "x"}, {"configure", "x", "--backend", "user", "--reset-codex-requirements"}, {"create", "x", "--backend", "user", "--claude-managed-settings", "x"}, {"configure", "x", "--backend", "user", "--reset-claude-managed-settings"}, {"delete", "--backend", "user"}, {"list", "x", "--backend", "user"}, {"create", strings.Repeat("a", 23), "--backend", "user"}, {"create", "x", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--ssh-port", "0"}, {"verify", "x", "--backend", "user", "--ssh-port", "22"}, {"create", "x", "--backend", "user", "--remove-home"}} {
 		if _, err := parseOptions(args); err == nil {
 			t.Fatalf("accepted %v", args)
 		}
@@ -178,11 +182,11 @@ func TestUserOfflineRender(t *testing.T) {
 	if err := json.Unmarshal([]byte(out.String()), &v); err != nil {
 		t.Fatal(err)
 	}
-	if v["ssh_port"] != float64(2222) || v["account"] != "dsb-example" || v["group"] != "dsb-example" || v["ssh_service"] != "existing system OpenSSH" {
+	if v["ssh_port"] != float64(2222) || v["account"] != "devwright-example" || v["group"] != "devwright-example" || v["ssh_service"] != "existing system OpenSSH" {
 		t.Fatal(v)
 	}
 	provisioning, ok := v["provisioning"].(map[string]any)
-	if !ok || provisioning["run_as"] != "dsb-example" || provisioning["config_source"] != "built-in editable defaults" || provisioning["claude_config_source"] != "built-in editable defaults" || provisioning["claude"] != "latest release in ~/.local/bin" {
+	if !ok || provisioning["run_as"] != "devwright-example" || provisioning["config_source"] != "built-in editable defaults" || provisioning["claude_config_source"] != "built-in editable defaults" || provisioning["claude"] != "latest release in ~/.local/bin" {
 		t.Fatal(v)
 	}
 }
@@ -200,7 +204,7 @@ func TestHelperValidation(t *testing.T) {
 	}
 }
 func TestNativeSudoAudit(t *testing.T) {
-	if err := checkUserSudo("User dsb-x may run the following commands:\n    (ALL : ALL) !ALL\n"); err != nil {
+	if err := checkUserSudo("User devwright-x may run the following commands:\n    (ALL : ALL) !ALL\n"); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"", "    (ALL) NOPASSWD: ALL\n    (ALL) !ALL", "    (root) /usr/bin/vi", "    (ALL) !ALL, /bin/sh"} {
@@ -210,7 +214,7 @@ func TestNativeSudoAudit(t *testing.T) {
 	}
 }
 func TestNativeSSHConfiguration(t *testing.T) {
-	s := userState{Name: "example", Account: "dsb-example", Port: 2222}
+	s := userState{Name: "example", Account: "devwright-example", Port: 2222}
 	dir := filepath.Join(t.TempDir(), "keys with spaces")
 	config := userSSHConfig(s, dir)
 	file := filepath.Join(t.TempDir(), "config")
@@ -221,7 +225,7 @@ func TestNativeSSHConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"hostname localhost", "user dsb-example", "port 2222", "forwardagent no", "identityagent none", "stricthostkeychecking true", "controlmaster false"} {
+	for _, want := range []string{"hostname localhost", "user devwright-example", "port 2222", "forwardagent no", "identityagent none", "stricthostkeychecking true", "controlmaster false"} {
 		if !strings.Contains(string(text), want) {
 			t.Fatalf("missing %s: %s", want, text)
 		}
@@ -245,18 +249,18 @@ func TestScopedNativeSSHD(t *testing.T) {
 		t.Fatalf("%v: %s", err, out)
 	}
 	a := userAdmin{etc: "/etc"}
-	s := userState{Name: "example", Account: "dsb-example"}
+	s := userState{Name: "example", Account: "devwright-example"}
 	part := filepath.Join(dir, "part")
 	os.WriteFile(part, a.sshRule(&s), 0600)
 	config := filepath.Join(dir, "config")
 	os.WriteFile(config, []byte("HostKey "+key+"\nInclude "+part+"\nUsePAM yes\nPasswordAuthentication yes\n"), 0600)
-	for _, account := range []string{"root", "dsb-example"} {
+	for _, account := range []string{"root", "devwright-example"} {
 		out, err := exec.Command("/usr/sbin/sshd", "-T", "-f", config, "-C", "user="+account+",host=localhost,addr=127.0.0.1").CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v: %s", err, out)
 		}
 		want := "passwordauthentication yes"
-		if account == "dsb-example" {
+		if account == "devwright-example" {
 			want = "passwordauthentication no"
 		}
 		if !strings.Contains(string(out), want) {
@@ -287,7 +291,7 @@ func TestSSHInstallNativePreservesOtherBackends(t *testing.T) {
 }
 func TestNativeClientSymlinkRefusal(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "managed"), []byte("dev-sandbox-user-v1\n"), 0600)
+	os.WriteFile(filepath.Join(dir, "managed"), []byte("devwright-user-v1\n"), 0600)
 	os.WriteFile(filepath.Join(dir, "id_ed25519.pub"), []byte(fixtureUserKey()), 0600)
 	os.Symlink("id_ed25519.pub", filepath.Join(dir, "id_ed25519"))
 	if checkUserClient(dir, fixtureUserKey()) == nil {
@@ -298,7 +302,7 @@ func TestNativeClientSymlinkRefusal(t *testing.T) {
 func TestNativePrivateKeyPermissions(t *testing.T) {
 	dir := t.TempDir()
 	os.Chmod(dir, 0700)
-	for name, data := range map[string]string{"managed": "dev-sandbox-user-v1\n", "id_ed25519": "synthetic private fixture", "id_ed25519.pub": fixtureUserKey()} {
+	for name, data := range map[string]string{"managed": "devwright-user-v1\n", "id_ed25519": "synthetic private fixture", "id_ed25519.pub": fixtureUserKey()} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -313,11 +317,11 @@ func TestNativePrivateKeyPermissions(t *testing.T) {
 }
 func TestNativeDeletionClientIsolation(t *testing.T) {
 	home := t.TempDir()
-	base := filepath.Join(home, ".ssh", "dev-sandbox")
+	base := filepath.Join(home, ".ssh", "devwright")
 	dir := filepath.Join(base, "user", "fixture")
 	os.MkdirAll(dir, 0700)
-	os.WriteFile(filepath.Join(dir, "managed"), []byte("dev-sandbox-user-v1\n"), 0600)
-	os.WriteFile(filepath.Join(base, "fixture.user.config"), []byte(sshHeader+"Host user-fixture\n  User dsb-fixture\n"), 0600)
+	os.WriteFile(filepath.Join(dir, "managed"), []byte("devwright-user-v1\n"), 0600)
+	os.WriteFile(filepath.Join(base, "fixture.user.config"), []byte(sshHeader+"Host user-fixture\n  User devwright-fixture\n"), 0600)
 	unrelated := filepath.Join(base, "fixture.incus.config")
 	os.WriteFile(unrelated, []byte("unrelated"), 0600)
 	if err := removeUserClient(home, "fixture"); err != nil {

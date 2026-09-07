@@ -1,7 +1,7 @@
-package devsandbox
+package devwright
 
 import (
-	"dev-sandbox/internal/userpolicy"
+	"devwright/internal/userpolicy"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -235,7 +235,7 @@ func (a *userAdmin) createAccount(s *userState) error {
 				return err
 			}
 		}
-		for _, pair := range [][2]string{{"UniqueID", strconv.Itoa(s.UID)}, {"PrimaryGroupID", strconv.Itoa(s.GID)}, {"NFSHomeDirectory", s.Home}, {"UserShell", "/bin/bash"}, {"RealName", "Dev Sandbox " + s.Name}, {"IsHidden", "1"}, {"Password", "*NP*"}} {
+		for _, pair := range [][2]string{{"UniqueID", strconv.Itoa(s.UID)}, {"PrimaryGroupID", strconv.Itoa(s.GID)}, {"NFSHomeDirectory", s.Home}, {"UserShell", "/bin/bash"}, {"RealName", "Devwright " + s.Name}, {"IsHidden", "1"}, {"Password", "*NP*"}} {
 			if _, err := a.command(nil, "/usr/bin/dscl", ".", "-create", "/Users/"+s.Account, pair[0], pair[1]); err != nil {
 				return err
 			}
@@ -292,7 +292,7 @@ func (a *userAdmin) checkIdentity(s *userState) error {
 	return nil
 }
 func (a *userAdmin) sudoPath(name string) string {
-	return filepath.Join(a.etc, "sudoers.d", "99-dev-sandbox-dsb-"+name)
+	return filepath.Join(a.etc, "sudoers.d", "99-devwright-"+name)
 }
 func (a *userAdmin) restrictAccount(s *userState) error {
 	if a.goos == "linux" {
@@ -472,7 +472,7 @@ func (a *userAdmin) deleteAccount(s *userState, removeHome bool) (userReply, err
 	if err := a.noProcesses(s.UID); err != nil {
 		return reply, err
 	}
-	archiveRoot := filepath.Join(filepath.Dir(s.Home), ".dev-sandbox-archives")
+	archiveRoot := filepath.Join(filepath.Dir(s.Home), ".devwright-archives")
 	if err := secureUserDir(archiveRoot, 0700); err != nil {
 		return reply, err
 	}
@@ -640,7 +640,7 @@ func (a *userAdmin) effectiveIDFree(id int) (bool, error) {
 }
 
 func (a *userAdmin) purgeArchive(s *userState) error {
-	root := filepath.Join(filepath.Dir(s.Home), ".dev-sandbox-archives")
+	root := filepath.Join(filepath.Dir(s.Home), ".devwright-archives")
 	expected := filepath.Join(root, fmt.Sprintf("%s-%d", s.Name, s.UID))
 	if s.Archive != expected {
 		return errors.New("invalid retained-home path in registry")

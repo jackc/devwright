@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"bytes"
@@ -31,9 +31,9 @@ type userAdmin struct {
 }
 
 func newUserAdmin(ctx context.Context, out io.Writer) *userAdmin {
-	a := &userAdmin{ctx: ctx, out: out, goos: runtime.GOOS, base: "/var/lib/dev-sandbox", etc: "/etc", owner: 0}
+	a := &userAdmin{ctx: ctx, out: out, goos: runtime.GOOS, base: "/var/lib/devwright", etc: "/etc", owner: 0}
 	if a.goos == "darwin" {
-		a.base = "/private/var/db/dev-sandbox"
+		a.base = "/private/var/db/devwright"
 		a.etc = "/private/etc"
 	}
 	if v := os.Getenv("SUDO_UID"); v != "" {
@@ -253,7 +253,7 @@ func writeUserFile(path string, data []byte, mode os.FileMode) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".dev-sandbox-")
+	f, err := os.CreateTemp(filepath.Dir(path), ".devwright-")
 	if err != nil {
 		return err
 	}
@@ -298,7 +298,7 @@ func (a *userAdmin) read(name string) (*userState, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, err
 	}
-	if s.Version != 1 || s.Name != name || s.Account != "dsb-"+name || s.Home != userHome(name, a.goos) || s.UID < 501 || s.GID < 501 || s.Port < 1 || s.Port > 65535 {
+	if s.Version != 1 || s.Name != name || s.Account != "devwright-"+name || s.Home != userHome(name, a.goos) || s.UID < 501 || s.GID < 501 || s.Port < 1 || s.Port > 65535 {
 		return nil, errors.New("invalid managed account registry")
 	}
 	if a.owner != 0 && a.owner != s.Owner {
@@ -339,17 +339,17 @@ func (a *userAdmin) execute(r userRequest) (userReply, error) {
 				return reply, err
 			}
 		}
-		if _, err := a.lookup("dsb-" + r.Name); err == nil {
+		if _, err := a.lookup("devwright-" + r.Name); err == nil {
 			return reply, errors.New("account already exists; adoption is unsupported")
 		} else if !errors.Is(err, errUserAbsent) {
 			return reply, err
 		}
-		if a.groupExists("dsb-" + r.Name) {
+		if a.groupExists("devwright-" + r.Name) {
 			return reply, errors.New("group already exists")
 		}
 		if a.goos == "darwin" {
 			for _, kind := range []string{"user", "group"} {
-				text, err := a.command(nil, "/usr/bin/dscacheutil", "-q", kind, "-a", "name", "dsb-"+r.Name)
+				text, err := a.command(nil, "/usr/bin/dscacheutil", "-q", kind, "-a", "name", "devwright-"+r.Name)
 				if err != nil {
 					return reply, err
 				}
@@ -365,7 +365,7 @@ func (a *userAdmin) execute(r userRequest) (userReply, error) {
 		if err != nil {
 			return reply, err
 		}
-		s := &userState{Version: 1, Name: r.Name, Account: "dsb-" + r.Name, UID: uid, GID: gid, Owner: a.owner, Home: userHome(r.Name, a.goos), Port: r.Port, Phase: "creating", PublicKey: r.PublicKey}
+		s := &userState{Version: 1, Name: r.Name, Account: "devwright-" + r.Name, UID: uid, GID: gid, Owner: a.owner, Home: userHome(r.Name, a.goos), Port: r.Port, Phase: "creating", PublicKey: r.PublicKey}
 		if a.goos == "darwin" {
 			id, err := a.command(nil, "/usr/bin/uuidgen")
 			if err != nil {

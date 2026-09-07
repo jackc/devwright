@@ -1,5 +1,28 @@
 # Native users, Lima, Incus, and Codex validation
 
+## Devwright rename
+
+Validated September 7, 2026 on macOS arm64. The project, executable, Go module,
+package, command directories, embedded Lima recipe, managed paths, startup
+markers, and release packaging now use `devwright`. Native accounts use
+`devwright-NAME`; environment names are limited to 22 characters so account
+names remain within 32 characters.
+
+- `mise run check` passed: Go tests, host/guest builds, Go vet, Python tests,
+  and Bash syntax checks. The Go cache was placed under `.build/go-cache`;
+  tests ran outside the agent sandbox to permit temporary loopback listeners.
+- The CLI reported `devwright dev` and rendered Lima, Incus VM, Incus container,
+  and native-user configurations from outside the checkout.
+- `mise run release v0.0.0-devwright-rename-check example/devwright` built all four
+  OS/CPU archives. Archive executable names and SHA-256 checksums passed, and
+  the generated `Devwright` Homebrew formula passed Ruby syntax validation.
+  The repository argument was a placeholder; nothing was published.
+- Existing environments were not modified or migrated. Live VM/container/native
+  account acceptance was not rerun for this rename.
+
+The sections below are historical records and retain the names and filesystem
+paths used during those validation runs.
+
 ## Claude Code controls
 
 Implemented September 6, 2026 on macOS arm64 with Claude Code 2.1.261 on the

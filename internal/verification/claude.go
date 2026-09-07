@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"dev-sandbox/internal/claudepolicy"
+	"devwright/internal/claudepolicy"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -168,7 +168,7 @@ func checkClaude(home string, out io.Writer) error {
 	if err := checkClaudeUserSettings(home); err != nil {
 		return err
 	}
-	expected, err := os.ReadFile("/usr/local/share/dev-sandbox/managed-settings.sha256")
+	expected, err := os.ReadFile("/usr/local/share/devwright/managed-settings.sha256")
 	if err != nil {
 		return err
 	}
@@ -200,10 +200,10 @@ func checkClaude(home string, out io.Writer) error {
 		fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, and drop-in absence")
 		fmt.Fprintln(out, "NOT TESTED: reported sandbox posture; this Claude Code release prints no posture fields on Linux")
 	}
-	if err := checkSandboxProfile(out, "/etc/apparmor.d", "/usr/local/share/dev-sandbox/bwrap-profile.sha256", "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"); err != nil {
+	if err := checkSandboxProfile(out, "/etc/apparmor.d", "/usr/local/share/devwright/bwrap-profile.sha256", "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"); err != nil {
 		return err
 	}
-	bundled, err := os.ReadFile("/usr/local/share/dev-sandbox/default-managed-settings.json")
+	bundled, err := os.ReadFile("/usr/local/share/devwright/default-managed-settings.json")
 	if err != nil {
 		return err
 	}

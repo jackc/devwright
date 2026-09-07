@@ -3,7 +3,7 @@ package verification
 import (
 	"bufio"
 	"context"
-	"dev-sandbox/internal/codexpolicy"
+	"devwright/internal/codexpolicy"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,7 +119,7 @@ func checkSelectedPolicy(out io.Writer, expected codexpolicy.Requirements) error
 		return c.request(deadline, method, params, id, result)
 	}
 	var init any
-	if err := request("initialize", map[string]any{"clientInfo": map[string]string{"name": "dev_sandbox_verify", "version": "1.0"}, "capabilities": map[string]bool{"experimentalApi": true}}, 1, &init); err != nil {
+	if err := request("initialize", map[string]any{"clientInfo": map[string]string{"name": "devwright_verify", "version": "1.0"}, "capabilities": map[string]bool{"experimentalApi": true}}, 1, &init); err != nil {
 		return err
 	}
 	if err := c.send(map[string]string{"method": "initialized"}); err != nil {

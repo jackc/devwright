@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ func writeTestFile(t *testing.T, path, data string) {
 func TestSSHInstallPreservesAndUpdates(t *testing.T) {
 	v := testVM(t, "install-ssh")
 	state := testState(t, v)
-	target := filepath.Join(v.home, ".ssh/dev-sandbox/test.config")
+	target := filepath.Join(v.home, ".ssh/devwright/test.config")
 	config := filepath.Join(v.home, ".ssh/config")
 	original := "Host personal\n  HostName example.invalid\n"
 	writeTestFile(t, target, sshHeader+"old alias")
@@ -40,7 +40,7 @@ func TestSSHInstallPreservesAndUpdates(t *testing.T) {
 	if string(data) != sshInclude+"\n\n"+original {
 		t.Fatalf("personal config changed: %s", data)
 	}
-	backups, _ := filepath.Glob(config + ".before-dev-sandbox-*")
+	backups, _ := filepath.Glob(config + ".before-devwright-*")
 	if len(backups) != 1 {
 		t.Fatalf("backup count: %v", backups)
 	}
@@ -61,7 +61,7 @@ func TestSSHInstallRefusesUnmanagedAndSymlinks(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			v := testVM(t, "install-ssh")
 			state := testState(t, v)
-			target := filepath.Join(v.home, ".ssh/dev-sandbox/test.config")
+			target := filepath.Join(v.home, ".ssh/devwright/test.config")
 			config := filepath.Join(v.home, ".ssh/config")
 			personal := filepath.Join(v.home, "personal")
 			writeTestFile(t, target, sshHeader+"old")

@@ -22,7 +22,7 @@ install -d -o dev -g dev -m 700 /home/dev/.ssh
 printf '%s' "$public_key_b64" | base64 -d > /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 install -o dev -g dev -m 600 /root/.ssh/authorized_keys /home/dev/.ssh/authorized_keys
-cat > /etc/ssh/sshd_config.d/00-dev-sandbox-root.conf <<'SSH'
+cat > /etc/ssh/sshd_config.d/00-devwright-root.conf <<'SSH'
 PermitRootLogin prohibit-password
 PasswordAuthentication no
 KbdInteractiveAuthentication no

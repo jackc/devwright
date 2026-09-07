@@ -25,11 +25,11 @@ class CanaryProbeTests(unittest.TestCase):
             curl.write_text("#!/bin/sh\nprintf '000'\nexit 1\n")
             curl.chmod(0o700)
             readable = root / "canary"
-            readable.write_text("dev-sandbox-synthetic-canary\n")
+            readable.write_text("devwright-synthetic-canary\n")
             empty = root / "empty"
             empty.touch()
             unreadable = root / "unreadable"
-            unreadable.write_text("dev-sandbox-synthetic-canary\n")
+            unreadable.write_text("devwright-synthetic-canary\n")
             unreadable.chmod(0)
             cases = [
                 (readable, "READABLE"),

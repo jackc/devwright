@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	devsandbox "dev-sandbox"
+	devwright "devwright"
 )
 
 var version = "dev"
@@ -15,8 +15,8 @@ var version = "dev"
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := devsandbox.Run(ctx, os.Args[1:], version, os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "dev-sandbox:", err)
+	if err := devwright.Run(ctx, os.Args[1:], version, os.Stdin, os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintln(os.Stderr, "devwright:", err)
 		os.Exit(1)
 	}
 }

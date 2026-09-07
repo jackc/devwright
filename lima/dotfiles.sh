@@ -15,7 +15,7 @@ cd "$HOME"
 repository=$1
 installer=$2
 # Each account owns its checkout; root never executes dev's copy.
-dotfiles="$HOME/.local/share/dev-sandbox/dotfiles"
+dotfiles="$HOME/.local/share/devwright/dotfiles"
 if [ ! -e "$dotfiles" ]; then
   mkdir -p "$(dirname "$dotfiles")"
   git clone -- "$repository" "$dotfiles"

@@ -92,7 +92,7 @@ verifier could neither read the posture nor rely on the flags. The policy keys
 used here need 2.1.219 or later, and the verifier checks that floor; it also
 tolerates a release without the posture report and says so. `configure`
 upgrades the package on each run, matching "configuration also updates Codex".
-The installed version is recorded in `/usr/local/share/dev-sandbox/claude-version`.
+The installed version is recorded in `/usr/local/share/devwright/claude-version`.
 The apt key is pinned by fingerprint in the script rather than trusted blindly.
 
 Alternative considered: the official `install.sh` run as root with a private
@@ -104,7 +104,7 @@ package is simpler and is the documented system-wide method.
 
 `/etc/claude-code/managed-settings.json`, root-owned, mode `0644`, directory
 `0755`. The file lifecycle copies the Codex one exactly: the embedded default
-is stored at `/usr/local/share/dev-sandbox/default-managed-settings.json`, a
+is stored at `/usr/local/share/devwright/default-managed-settings.json`, a
 custom selection at `custom-managed-settings.json`, the installed policy's
 checksum at `managed-settings.sha256`, and `configure` restores the selection
 in `custom`/`default`/`preserve` modes. The `managed-settings.d/` drop-in
@@ -148,7 +148,7 @@ absent or with `--replace-claude-config`. The embedded file is
 `approval_policy = "on-request"`: sandboxed commands run without prompts, and
 anything the sandbox blocks still needs a person. Claude Code's Bash tool
 inherits the shell environment by default, so no equivalent of
-`shell_environment_policy` is needed for `~/.config/dev-sandbox/credentials.sh`
+`shell_environment_policy` is needed for `~/.config/devwright/credentials.sh`
 to reach agents. `~/.claude` is created `0700` next to `~/.codex`; the config
 file is staged outside dev's directories and renamed, as for Codex.
 
@@ -163,7 +163,7 @@ Two supported paths, neither of which copies host credentials:
 * Interactive: `ssh lima-dev`, run `claude`, complete `/login` by opening the
   printed URL on the host and pasting the code.
 * Token: run `claude setup-token` on a trusted machine and add
-  `export CLAUDE_CODE_OAUTH_TOKEN='...'` to `~/.config/dev-sandbox/credentials.sh`
+  `export CLAUDE_CODE_OAUTH_TOKEN='...'` to `~/.config/devwright/credentials.sh`
   in the guest. This uses the existing credential convention and its startup
   hooks; every process running as `dev` can read it, by design.
 
@@ -241,7 +241,7 @@ Everything below is credential-free and uses synthetic files only.
    `claude --version` reports at least 2.1.219.
 2. `/etc/claude-code` and `managed-settings.json` are root-owned and not
    writable by dev; the checksum matches
-   `/usr/local/share/dev-sandbox/managed-settings.sha256`; no
+   `/usr/local/share/devwright/managed-settings.sha256`; no
    `managed-settings.d` entries and no `managed-mcp.json` exist.
 3. `claude sandbox status` run as dev in `~/projects` prints one JSON line with
    `enabled: true`, `enabledSource: "policy"`, `strictMode: true`,
@@ -268,7 +268,7 @@ Everything below is credential-free and uses synthetic files only.
    `credentials.sh` cannot redirect the request away from the stub.
 
    The stub answers the first request with a streamed `tool_use` block for
-   `Bash` whose command is `/usr/local/share/dev-sandbox/verify claude-probe
+   `Bash` whose command is `/usr/local/share/devwright/verify claude-probe
    CANARY SIBLING`, and the second request, which carries the `tool_result`,
    with `end_turn`. The probe is the existing `SandboxProbe`: workspace write
    succeeds, outside-workspace write is denied, the canary read (a synthetic
@@ -431,7 +431,7 @@ the native-user installer flow, and every authenticated behaviour.
 5. `lima/provision.sh`: apt key with fingerprint check, repository, package
    install, the CLAUDE FILES block, version record, dev smoke test.
 6. `internal/verification`: `claude.go` with the posture checks, stub server,
-   probe orchestration and lock test; `cmd/dev-sandbox-verify` gains
+   probe orchestration and lock test; `cmd/devwright-verify` gains
    `claude-probe CANARY SIBLING`.
 7. `user_setup.go`, `user_backend.go`, `internal/verification/native.go`:
    installer step, editable defaults, prerequisites, native verification.

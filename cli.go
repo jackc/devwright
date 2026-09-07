@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const usage = `Usage: dev-sandbox ACTION [NAME] [OPTIONS]
+const usage = `Usage: devwright ACTION [NAME] [OPTIONS]
 Actions: render, create, configure, verify, ssh-config, install-ssh
 User backend only: list, shell, delete (delete requires an explicit NAME)
 Default environment: dev
@@ -68,7 +68,7 @@ var validSize = regexp.MustCompile(`^[1-9][0-9]*(MiB|GiB|TiB)$`)
 
 func parseOptions(args []string) (options, error) {
 	o := options{name: "dev", set: map[string]bool{}}
-	f := flag.NewFlagSet("dev-sandbox", flag.ContinueOnError)
+	f := flag.NewFlagSet("devwright", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
 	f.BoolVar(&o.help, "help", false, "")
 	f.BoolVar(&o.help, "h", false, "")
@@ -145,8 +145,8 @@ func parseOptions(args []string) (options, error) {
 		return o, errors.New("--backend must be lima, incus, or user")
 	}
 	if o.backend == "user" {
-		if len(o.name) > 28 {
-			return o, errors.New("user environment names have a maximum of 28 characters")
+		if len(o.name) > 22 {
+			return o, errors.New("user environment names have a maximum of 22 characters")
 		}
 		if o.action == "delete" && len(positional) != 2 {
 			return o, errors.New("delete requires an explicit environment name")
@@ -255,7 +255,7 @@ func Run(ctx context.Context, args []string, version string, stdin io.Reader, st
 		return err
 	}
 	if o.version {
-		_, err = fmt.Fprintf(stdout, "dev-sandbox %s\n", version)
+		_, err = fmt.Fprintf(stdout, "devwright %s\n", version)
 		return err
 	}
 	if err := o.loadAgentFiles(); err != nil {
@@ -286,7 +286,7 @@ var limaVersion = regexp.MustCompile(`(?m)^limactl version v?([0-9]+)\.([0-9]+)\
 
 func preflight(run runner, lookPath func(string) (string, error), goos string) error {
 	if goos != "darwin" && goos != "linux" {
-		return errors.New("dev-sandbox supports macOS and Linux hosts")
+		return errors.New("devwright supports macOS and Linux hosts")
 	}
 	for _, name := range []string{"limactl", "ssh"} {
 		if _, err := lookPath(name); err != nil {

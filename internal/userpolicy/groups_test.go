@@ -12,36 +12,36 @@ func TestNativeEffectiveGroups(t *testing.T) {
 		name, goos, groups, record string
 		wantError                  bool
 	}{
-		{"private Linux account", "linux", "dsb-example", "", false},
-		{"Linux sudo group", "linux", "dsb-example sudo", public, true},
-		{"Linux public-name bypass", "linux", "dsb-example com.apple.sharepoint.group.1", public, true},
-		{"macOS automatic and SSH", "darwin", "dsb-example everyone localaccounts com.apple.access_ssh", "", false},
-		{"public sharing inherited from Everyone", "darwin", "dsb-example everyone com.apple.sharepoint.group.1", public, false},
-		{"wrapped nested GUIDs", "darwin", "dsb-example com.apple.sharepoint.group.1", "NestedGroups:\n OTHER-GUID\n " + everyoneGUID + "\nRecordName: fixture\n", false},
-		{"private sharing still rejected", "darwin", "dsb-example com.apple.sharepoint.group.1", "NestedGroups: PRIVATE-GROUP-GUID\n", true},
-		{"no nested group", "darwin", "dsb-example com.apple.sharepoint.group.1", "GroupMembership: dsb-example\n", true},
-		{"misleading description", "darwin", "dsb-example com.apple.sharepoint.group.1", "RealName: " + everyoneGUID + "\n", true},
-		{"misleading member GUID", "darwin", "dsb-example com.apple.sharepoint.group.1", "GroupMembers: " + everyoneGUID + "\n", true},
-		{"lookalike sharing name", "darwin", "dsb-example com.apple.sharepoint.group.1-admin", public, true},
-		{"nested admin remains forbidden", "darwin", "dsb-example admin", public, true},
-		{"nested wheel remains forbidden", "darwin", "dsb-example wheel", public, true},
-		{"default local printing access", "darwin", "dsb-example _lpoperator", "NestedGroups: " + localAccountsGUID + " ABCDEFAB-CDEF-ABCD-EFAB-CDEF00000062\n", false},
-		{"printing name alone is insufficient", "darwin", "dsb-example _lpoperator", "GroupMembership: dsb-example\n", true},
-		{"printing inherited only from print admins", "darwin", "dsb-example _lpoperator", "NestedGroups: ABCDEFAB-CDEF-ABCD-EFAB-CDEF00000062\n", true},
-		{"printing wrong attribute", "darwin", "dsb-example _lpoperator", "GroupMembers: " + localAccountsGUID + "\n", true},
-		{"printing Everyone alone is insufficient", "darwin", "dsb-example _lpoperator", public, true},
-		{"print admin remains forbidden", "darwin", "dsb-example _lpadmin", "NestedGroups: " + localAccountsGUID + "\n", true},
-		{"Linux printing remains forbidden", "linux", "dsb-example _lpoperator", "NestedGroups: " + localAccountsGUID + "\n", true},
+		{"private Linux account", "linux", "devwright-example", "", false},
+		{"Linux sudo group", "linux", "devwright-example sudo", public, true},
+		{"Linux public-name bypass", "linux", "devwright-example com.apple.sharepoint.group.1", public, true},
+		{"macOS automatic and SSH", "darwin", "devwright-example everyone localaccounts com.apple.access_ssh", "", false},
+		{"public sharing inherited from Everyone", "darwin", "devwright-example everyone com.apple.sharepoint.group.1", public, false},
+		{"wrapped nested GUIDs", "darwin", "devwright-example com.apple.sharepoint.group.1", "NestedGroups:\n OTHER-GUID\n " + everyoneGUID + "\nRecordName: fixture\n", false},
+		{"private sharing still rejected", "darwin", "devwright-example com.apple.sharepoint.group.1", "NestedGroups: PRIVATE-GROUP-GUID\n", true},
+		{"no nested group", "darwin", "devwright-example com.apple.sharepoint.group.1", "GroupMembership: devwright-example\n", true},
+		{"misleading description", "darwin", "devwright-example com.apple.sharepoint.group.1", "RealName: " + everyoneGUID + "\n", true},
+		{"misleading member GUID", "darwin", "devwright-example com.apple.sharepoint.group.1", "GroupMembers: " + everyoneGUID + "\n", true},
+		{"lookalike sharing name", "darwin", "devwright-example com.apple.sharepoint.group.1-admin", public, true},
+		{"nested admin remains forbidden", "darwin", "devwright-example admin", public, true},
+		{"nested wheel remains forbidden", "darwin", "devwright-example wheel", public, true},
+		{"default local printing access", "darwin", "devwright-example _lpoperator", "NestedGroups: " + localAccountsGUID + " ABCDEFAB-CDEF-ABCD-EFAB-CDEF00000062\n", false},
+		{"printing name alone is insufficient", "darwin", "devwright-example _lpoperator", "GroupMembership: devwright-example\n", true},
+		{"printing inherited only from print admins", "darwin", "devwright-example _lpoperator", "NestedGroups: ABCDEFAB-CDEF-ABCD-EFAB-CDEF00000062\n", true},
+		{"printing wrong attribute", "darwin", "devwright-example _lpoperator", "GroupMembers: " + localAccountsGUID + "\n", true},
+		{"printing Everyone alone is insufficient", "darwin", "devwright-example _lpoperator", public, true},
+		{"print admin remains forbidden", "darwin", "devwright-example _lpadmin", "NestedGroups: " + localAccountsGUID + "\n", true},
+		{"Linux printing remains forbidden", "linux", "devwright-example _lpoperator", "NestedGroups: " + localAccountsGUID + "\n", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := CheckGroups(tc.goos, "dsb-example", tc.groups, func(string) (string, error) { return tc.record, nil })
+			err := CheckGroups(tc.goos, "devwright-example", tc.groups, func(string) (string, error) { return tc.record, nil })
 			if (err != nil) != tc.wantError {
 				t.Fatalf("CheckGroups: %v", err)
 			}
 		})
 	}
 	problem := errors.New("directory lookup failed")
-	err := CheckGroups("darwin", "dsb-example", "com.apple.sharepoint.group.1", func(string) (string, error) { return "", problem })
+	err := CheckGroups("darwin", "devwright-example", "com.apple.sharepoint.group.1", func(string) (string, error) { return "", problem })
 	if !errors.Is(err, problem) {
 		t.Fatalf("did not fail closed after directory lookup failure: %v", err)
 	}
@@ -61,13 +61,13 @@ func TestCompleteDarwinAutomaticMemberships(t *testing.T) {
 		}
 		return record, nil
 	}
-	names := "dsb-example everyone localaccounts com.apple.sharepoint.group.1 _lpoperator com.apple.access_ssh"
-	if err := CheckGroups("darwin", "dsb-example", names, read); err != nil {
+	names := "devwright-example everyone localaccounts com.apple.sharepoint.group.1 _lpoperator com.apple.access_ssh"
+	if err := CheckGroups("darwin", "devwright-example", names, read); err != nil {
 		t.Fatal(err)
 	}
 	// Report every incompatible membership in one pass, including after a
 	// directory lookup failure, rather than failing one group per manual run.
-	err := CheckGroups("darwin", "dsb-example", names+" admin _lpadmin _developer com.apple.sharepoint.group.2", read)
+	err := CheckGroups("darwin", "devwright-example", names+" admin _lpadmin _developer com.apple.sharepoint.group.2", read)
 	if err == nil {
 		t.Fatal("accepted privileged memberships")
 	}
@@ -86,13 +86,13 @@ func TestExplicitDarwinGroupMembership(t *testing.T) {
 	}{
 		{"NestedGroups: " + everyoneGUID + "\n", false},
 		{"NestedGroups: " + guid + "\n", false},
-		{"GroupMembership: dsb-example\n", true},
-		{"GroupMembership:\n other\n dsb-example\n", true},
-		{"GroupMembership: dsb-example-other\n", false},
+		{"GroupMembership: devwright-example\n", true},
+		{"GroupMembership:\n other\n devwright-example\n", true},
+		{"GroupMembership: devwright-example-other\n", false},
 		{"GroupMembers: " + strings.ToLower(guid) + "\n", true},
-		{"RealName:\n dsb-example\nGroupMembership: other\n", false},
+		{"RealName:\n devwright-example\nGroupMembership: other\n", false},
 	} {
-		if got := DarwinGroupHasUser(tc.record, "dsb-example", guid); got != tc.want {
+		if got := DarwinGroupHasUser(tc.record, "devwright-example", guid); got != tc.want {
 			t.Fatalf("record %q: got %v", tc.record, got)
 		}
 	}

@@ -6,7 +6,7 @@ umask 077
 test "$(id -un)" = dev
 test "$HOME" = /home/dev
 
-directory="$HOME/.config/dev-sandbox"
+directory="$HOME/.config/devwright"
 mkdir -p "$directory"
 chmod 700 "$directory"
 credentials="$directory/credentials.sh"
@@ -23,11 +23,11 @@ test -f "$credentials" && test -O "$credentials"
 chmod 600 "$credentials"
 
 hook=$(cat <<'HOOK'
-# BEGIN DEV-SANDBOX CREDENTIALS
-if [ -r "$HOME/.config/dev-sandbox/credentials.sh" ]; then
-  . "$HOME/.config/dev-sandbox/credentials.sh"
+# BEGIN DEVWRIGHT CREDENTIALS
+if [ -r "$HOME/.config/devwright/credentials.sh" ]; then
+  . "$HOME/.config/devwright/credentials.sh"
 fi
-# END DEV-SANDBOX CREDENTIALS
+# END DEVWRIGHT CREDENTIALS
 HOOK
 )
 temporary=
@@ -45,7 +45,7 @@ for name in .profile .bashrc .bash_profile .bash_login .zshenv; do
     exit 1
   fi
   target=$(readlink -f -- "$file")
-  temporary=$(mktemp "$(dirname "$target")/.dev-sandbox-startup.XXXXXX")
+  temporary=$(mktemp "$(dirname "$target")/.devwright-startup.XXXXXX")
   source_file=/dev/null
   if [ -e "$target" ]; then
     test -f "$target"
@@ -56,8 +56,8 @@ for name in .profile .bashrc .bash_profile .bash_login .zshenv; do
   # Keep a shebang first and preserve all other content. Reject broken markers
   # before replacing the file, rather than accidentally discarding its tail.
   if ! awk -v hook="$hook" '
-    /^# BEGIN DEV-SANDBOX CREDENTIALS$/ { if (inside) exit 1; inside=1; next }
-    /^# END DEV-SANDBOX CREDENTIALS$/ { if (!inside) exit 1; inside=0; next }
+    /^# BEGIN DEVWRIGHT CREDENTIALS$/ { if (inside) exit 1; inside=1; next }
+    /^# END DEVWRIGHT CREDENTIALS$/ { if (!inside) exit 1; inside=0; next }
     inside { next }
     !printed && /^#!/ && NR == 1 { print; next }
     !printed { print hook; printed=1 }

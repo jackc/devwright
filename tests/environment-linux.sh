@@ -7,7 +7,7 @@ if [ "${1:-}" != --inside ]; then
   exec unshare --mount --net --pid --fork --mount-proc /bin/bash "$0" --inside "${1:?provision.sh path required}"
 fi
 provision=$2
-fixture=$(mktemp -d /tmp/dev-sandbox-environment.XXXXXX)
+fixture=$(mktemp -d /tmp/devwright-environment.XXXXXX)
 trap 'rm -rf "$fixture"' EXIT
 chmod 755 "$fixture"
 mkdir -p "$fixture/home/dev" "$fixture/home/other" "$fixture/root" "$fixture/bin" "$fixture/environment.d"
@@ -16,11 +16,11 @@ mount -t overlay overlay -o "lowerdir=/etc,upperdir=$fixture/etc-upper,workdir=$
 mount -t tmpfs tmpfs /run
 # An unprovisioned test VM may supply extracted Ubuntu packages, used only
 # in this namespace. The normal recipe installs gh and zsh as dependencies.
-if [ -n "${DEV_SANDBOX_TEST_PACKAGES:-}" ]; then
+if [ -n "${DEVWRIGHT_TEST_PACKAGES:-}" ]; then
   mkdir "$fixture/usr-upper" "$fixture/usr-work"
-  mount -t overlay overlay -o "lowerdir=$DEV_SANDBOX_TEST_PACKAGES/usr:/usr,upperdir=$fixture/usr-upper,workdir=$fixture/usr-work" /usr
-  if [ -d "$DEV_SANDBOX_TEST_PACKAGES/etc/zsh" ]; then
-    cp -a "$DEV_SANDBOX_TEST_PACKAGES/etc/zsh" /etc/
+  mount -t overlay overlay -o "lowerdir=$DEVWRIGHT_TEST_PACKAGES/usr:/usr,upperdir=$fixture/usr-upper,workdir=$fixture/usr-work" /usr
+  if [ -d "$DEVWRIGHT_TEST_PACKAGES/etc/zsh" ]; then
+    cp -a "$DEVWRIGHT_TEST_PACKAGES/etc/zsh" /etc/
   fi
 fi
 test -x /usr/bin/gh && test -x /usr/bin/zsh
@@ -58,7 +58,7 @@ RC
 printf '. "$HOME/.bashrc"\nexport PROFILE_SETTING=preserved\n' > /home/dev/.profile
 chown dev:dev /home/dev/.bashrc /home/dev/.profile
 setup
-credentials=/home/dev/.config/dev-sandbox/credentials.sh
+credentials=/home/dev/.config/devwright/credentials.sh
 test "$(stat -c '%U:%G %a' "$credentials")" = 'dev:dev 600'
 test ! -e /home/dev/.bash_profile && test ! -e /home/dev/.bash_login
 cat > "$credentials" <<'ENV'
@@ -97,7 +97,7 @@ printf 'case $- in *i*) ;; *) return ;; esac\n' > "$fixture/prepend"
 cat /home/dev/dotfiles/bashrc >> "$fixture/prepend"
 cat "$fixture/prepend" > /home/dev/dotfiles/bashrc
 setup
-test "$(grep -c '^# BEGIN DEV-SANDBOX CREDENTIALS$' /home/dev/.bashrc)" = 1
+test "$(grep -c '^# BEGIN DEVWRIGHT CREDENTIALS$' /home/dev/.bashrc)" = 1
 grep -q 'INTERACTIVE_SETTING=preserved' /home/dev/.bashrc
 printf '%s\n' 'PASS startup symlinks, existing login files, and hook repair before early returns'
 
@@ -156,7 +156,7 @@ printf '%s\n' 'PASS root and other SSH accounts do not receive development crede
 kill "$(cat "$fixture/sshd.pid")"
 
 # Malformed managed blocks must not truncate or replace an existing startup file.
-printf '# BEGIN DEV-SANDBOX CREDENTIALS\nkeep-this-content\n' > /home/dev/.zshenv
+printf '# BEGIN DEVWRIGHT CREDENTIALS\nkeep-this-content\n' > /home/dev/.zshenv
 broken_before=$(sha256sum /home/dev/.zshenv)
 if setup 2> "$fixture/broken-error"; then exit 1; fi
 test "$broken_before" = "$(sha256sum /home/dev/.zshenv)"

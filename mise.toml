@@ -14,9 +14,9 @@ description = "Build and compress Linux/macOS verifiers"
 run = "bash scripts/build-guest.sh"
 
 [tasks.build]
-description = "Build .build/dev-sandbox with embedded guest verifiers"
+description = "Build .build/devwright with embedded guest verifiers"
 depends = ["guest"]
-run = 'CGO_ENABLED=0 "${GO:-go}" build -trimpath -ldflags "-X main.version=${VERSION:-dev}" -o .build/dev-sandbox ./cmd/dev-sandbox'
+run = 'CGO_ENABLED=0 "${GO:-go}" build -trimpath -ldflags "-X main.version=${VERSION:-dev}" -o .build/devwright ./cmd/devwright'
 
 [tasks.test]
 description = "Run Go tests"

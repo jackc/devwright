@@ -32,19 +32,19 @@ for platform in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
   goos=${platform%_*}
   arch=${platform#*_}
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$arch" go build -trimpath \
-    -ldflags "-s -w -X main.version=$version" -o "$staging/dev-sandbox" ./cmd/dev-sandbox
-  COPYFILE_DISABLE=1 tar --format=ustar -czf "$dist/dev-sandbox_${version}_${platform}.tar.gz" \
-    -C "$staging" dev-sandbox README.md VALIDATION.md licenses
+    -ldflags "-s -w -X main.version=$version" -o "$staging/devwright" ./cmd/devwright
+  COPYFILE_DISABLE=1 tar --format=ustar -czf "$dist/devwright_${version}_${platform}.tar.gz" \
+    -C "$staging" devwright README.md VALIDATION.md licenses
 done
 (
   cd "$dist"
-  shasum -a 256 dev-sandbox_*.tar.gz > checksums.txt
+  shasum -a 256 devwright_*.tar.gz > checksums.txt
 )
 if [[ -n "$repository" ]]; then
-  checksum() { shasum -a 256 "$dist/dev-sandbox_${version}_$1.tar.gz" | cut -d ' ' -f 1; }
+  checksum() { shasum -a 256 "$dist/devwright_${version}_$1.tar.gz" | cut -d ' ' -f 1; }
   base="https://github.com/$repository/releases/download/$version"
-  cat > "$dist/dev-sandbox.rb" <<FORMULA
-class DevSandbox < Formula
+  cat > "$dist/devwright.rb" <<FORMULA
+class Devwright < Formula
   desc "Manage development VMs, containers, or restricted users"
   homepage "https://github.com/$repository"
   version "${version#v}"
@@ -52,33 +52,33 @@ class DevSandbox < Formula
   on_macos do
     depends_on "lima"
     on_arm do
-      url "$base/dev-sandbox_${version}_darwin_arm64.tar.gz"
+      url "$base/devwright_${version}_darwin_arm64.tar.gz"
       sha256 "$(checksum darwin_arm64)"
     end
     on_intel do
-      url "$base/dev-sandbox_${version}_darwin_amd64.tar.gz"
+      url "$base/devwright_${version}_darwin_amd64.tar.gz"
       sha256 "$(checksum darwin_amd64)"
     end
   end
   on_linux do
     on_arm do
-      url "$base/dev-sandbox_${version}_linux_arm64.tar.gz"
+      url "$base/devwright_${version}_linux_arm64.tar.gz"
       sha256 "$(checksum linux_arm64)"
     end
     on_intel do
-      url "$base/dev-sandbox_${version}_linux_amd64.tar.gz"
+      url "$base/devwright_${version}_linux_amd64.tar.gz"
       sha256 "$(checksum linux_amd64)"
     end
   end
 
   def install
-    bin.install "dev-sandbox"
+    bin.install "devwright"
     doc.install "README.md", "VALIDATION.md", "licenses"
   end
 
   test do
-    assert_match "dev-sandbox $version", shell_output("#{bin}/dev-sandbox --version")
-    assert_equal true, JSON.parse(shell_output("#{bin}/dev-sandbox render"))["plain"]
+    assert_match "devwright $version", shell_output("#{bin}/devwright --version")
+    assert_equal true, JSON.parse(shell_output("#{bin}/devwright render"))["plain"]
   end
 end
 FORMULA

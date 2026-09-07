@@ -1,7 +1,7 @@
 package verification
 
 import (
-	"dev-sandbox/internal/userpolicy"
+	"devwright/internal/userpolicy"
 	"errors"
 	"fmt"
 	"io"
@@ -27,14 +27,14 @@ func nativeIdentity(account, home string) error {
 	return nil
 }
 
-const credentialsHook = `# BEGIN DEV-SANDBOX CREDENTIALS
-if [ -r "$HOME/.config/dev-sandbox/credentials.sh" ]; then
-  . "$HOME/.config/dev-sandbox/credentials.sh"
+const credentialsHook = `# BEGIN DEVWRIGHT CREDENTIALS
+if [ -r "$HOME/.config/devwright/credentials.sh" ]; then
+  . "$HOME/.config/devwright/credentials.sh"
 fi
-# END DEV-SANDBOX CREDENTIALS`
-const pathHook = `# BEGIN DEV-SANDBOX PATH
+# END DEVWRIGHT CREDENTIALS`
+const pathHook = `# BEGIN DEVWRIGHT PATH
 export PATH="$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-# END DEV-SANDBOX PATH`
+# END DEVWRIGHT PATH`
 
 // StartupHook preserves user content and refuses malformed/overlapping blocks.
 func StartupHook(content, begin, end, hook string) (string, error) {
@@ -80,7 +80,7 @@ func SetupUser(account, home string) error {
 	if err := nativeIdentity(account, home); err != nil {
 		return err
 	}
-	dir := filepath.Join(home, ".config", "dev-sandbox")
+	dir := filepath.Join(home, ".config", "devwright")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -142,18 +142,18 @@ func SetupUser(account, home string) error {
 			return err
 		}
 		// Insert credentials first, then PATH ahead of it; both precede early returns.
-		next, err := StartupHook(string(content), "# BEGIN DEV-SANDBOX CREDENTIALS", "# END DEV-SANDBOX CREDENTIALS", credentialsHook)
+		next, err := StartupHook(string(content), "# BEGIN DEVWRIGHT CREDENTIALS", "# END DEVWRIGHT CREDENTIALS", credentialsHook)
 		if err != nil {
 			return err
 		}
-		next, err = StartupHook(next, "# BEGIN DEV-SANDBOX PATH", "# END DEV-SANDBOX PATH", pathHook)
+		next, err = StartupHook(next, "# BEGIN DEVWRIGHT PATH", "# END DEVWRIGHT PATH", pathHook)
 		if err != nil {
 			return err
 		}
 		if next == string(content) {
 			continue
 		}
-		tmp, err := os.CreateTemp(filepath.Dir(path), ".dev-sandbox-startup-")
+		tmp, err := os.CreateTemp(filepath.Dir(path), ".devwright-startup-")
 		if err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ func CheckNative(account, home string, out io.Writer) error {
 	if _, _, err := probe("/usr/bin/sudo", "-n", "true"); err == nil {
 		return errors.New("restricted account can sudo")
 	}
-	credentials := filepath.Join(home, ".config", "dev-sandbox", "credentials.sh")
+	credentials := filepath.Join(home, ".config", "devwright", "credentials.sh")
 	info, err = os.Stat(credentials)
 	if err != nil {
 		return err
@@ -212,11 +212,11 @@ func CheckNative(account, home string, out io.Writer) error {
 	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || int(info.Sys().(*syscall.Stat_t).Uid) != os.Geteuid() {
 		return errors.New("credentials must be account-owned with mode 0600")
 	}
-	base := "/var/lib/dev-sandbox"
+	base := "/var/lib/devwright"
 	if runtime.GOOS == "darwin" {
-		base = "/private/var/db/dev-sandbox"
+		base = "/private/var/db/devwright"
 	}
-	for _, path := range []string{base, filepath.Join(base, "users"), "/etc/ssh/dev-sandbox", "/etc/sudoers.d"} {
+	for _, path := range []string{base, filepath.Join(base, "users"), "/etc/ssh/devwright", "/etc/sudoers.d"} {
 		if unix.Access(path, unix.W_OK) == nil {
 			return fmt.Errorf("writable management path: %s", path)
 		}

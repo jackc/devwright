@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func (v *vm) render() ([]byte, error) {
 	if v.backend == "incus" {
 		return v.renderIncus()
 	}
-	data, err := recipe.ReadFile("lima/dev-sandbox.json")
+	data, err := recipe.ReadFile("lima/devwright.json")
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (v *vm) bootstrap(state instance) error {
 }
 
 func (v *vm) verify(state instance) error {
-	return v.remote(state, []string{"/usr/local/share/dev-sandbox/verify"}, "dev", nil)
+	return v.remote(state, []string{"/usr/local/share/devwright/verify"}, "dev", nil)
 }
 
 func (v *vm) configure(state instance) error {
@@ -211,7 +211,7 @@ func (v *vm) execute() error {
 			return err
 		}
 		// Each invocation gets its own file; installed binaries need no writable checkout.
-		dir, err := os.MkdirTemp("", "dev-sandbox-")
+		dir, err := os.MkdirTemp("", "devwright-")
 		if err != nil {
 			return err
 		}
@@ -270,7 +270,7 @@ func (v *vm) execute() error {
 		if err := v.configure(state); err != nil {
 			return err
 		}
-		fmt.Fprintf(v.out, "Created and verified. Set up SSH: dev-sandbox install-ssh %s --backend %s\n", v.name, v.backend)
+		fmt.Fprintf(v.out, "Created and verified. Set up SSH: devwright install-ssh %s --backend %s\n", v.name, v.backend)
 	case "configure":
 		return v.configure(state)
 	case "verify":

@@ -3,7 +3,7 @@ package verification
 import (
 	"bytes"
 	"crypto/sha256"
-	"dev-sandbox/internal/codexpolicy"
+	"devwright/internal/codexpolicy"
 	"errors"
 	"fmt"
 	"io"
@@ -48,7 +48,7 @@ func Check(out io.Writer) error {
 	if _, err := os.ReadDir("/root"); !errors.Is(err, os.ErrPermission) {
 		return fmt.Errorf("Administrator home access did not fail with permission denial: %v", err)
 	}
-	for _, path := range []string{"/etc/codex", "/etc/codex/requirements.toml", "/usr/local/bin", "/usr/local/share/dev-sandbox", "/etc/claude-code", "/etc/claude-code/managed-settings.json", "/usr/bin/claude"} {
+	for _, path := range []string{"/etc/codex", "/etc/codex/requirements.toml", "/usr/local/bin", "/usr/local/share/devwright", "/etc/claude-code", "/etc/claude-code/managed-settings.json", "/usr/bin/claude"} {
 		info, err := os.Stat(path)
 		if err != nil {
 			return err
@@ -58,7 +58,7 @@ func Check(out io.Writer) error {
 		}
 	}
 	// Check ownership and permissions without reading credential values.
-	credentials := filepath.Join(dev.HomeDir, ".config/dev-sandbox/credentials.sh")
+	credentials := filepath.Join(dev.HomeDir, ".config/devwright/credentials.sh")
 	info, err := os.Stat(credentials)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func Check(out io.Writer) error {
 	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 ||
 		int(info.Sys().(*syscall.Stat_t).Uid) != os.Geteuid() ||
 		unix.Access(credentials, unix.R_OK|unix.W_OK) != nil {
-		return errors.New("Expected dev-owned ~/.config/dev-sandbox/credentials.sh with mode 0600")
+		return errors.New("Expected dev-owned ~/.config/devwright/credentials.sh with mode 0600")
 	}
 	mounts, err := os.ReadFile("/proc/mounts")
 	if err != nil {
@@ -85,7 +85,7 @@ func Check(out io.Writer) error {
 	if unix.Access("/var/run/docker.sock", unix.R_OK|unix.W_OK) == nil {
 		return errors.New("Docker socket accessible")
 	}
-	expected, err := os.ReadFile("/usr/local/share/dev-sandbox/requirements.sha256")
+	expected, err := os.ReadFile("/usr/local/share/devwright/requirements.sha256")
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func Check(out io.Writer) error {
 	if err := checkSelectedPolicy(out, selected); err != nil {
 		return err
 	}
-	bundled, err := os.ReadFile("/usr/local/share/dev-sandbox/default-requirements.toml")
+	bundled, err := os.ReadFile("/usr/local/share/devwright/default-requirements.toml")
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func Check(out io.Writer) error {
 	return nil
 }
 
-const canaryText = "dev-sandbox-synthetic-canary\n"
+const canaryText = "devwright-synthetic-canary\n"
 
 func sandboxCheck(home string, out io.Writer) error {
 	canary := filepath.Join(home, ".pgpass")

@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 
 var validIncusResource = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 
-const incusMarker = "dev-sandbox-v1"
+const incusMarker = "devwright-v1"
 const incusImage = "images:ubuntu/26.04"
 
 // Always address the local server and default project, independently of the
@@ -31,7 +31,7 @@ func incusArgs(args ...string) []string {
 
 func incusPreflight(run runner, lookPath func(string) (string, error), goos string) error {
 	if goos != "linux" {
-		return errors.New("the Incus backend requires a Linux host; run dev-sandbox inside your Linux VM")
+		return errors.New("the Incus backend requires a Linux host; run devwright inside your Linux VM")
 	}
 	for _, name := range []string{"incus", "ssh", "ssh-keygen"} {
 		if _, err := lookPath(name); err != nil {
@@ -70,7 +70,7 @@ func (v *vm) renderIncus() ([]byte, error) {
 		disk = "60GiB"
 	}
 	config := map[string]string{
-		"user.dev-sandbox": incusMarker, "limits.cpu": strconv.Itoa(cpus), "limits.memory": memory,
+		"user.devwright": incusMarker, "limits.cpu": strconv.Itoa(cpus), "limits.memory": memory,
 	}
 	if v.container {
 		// Bubblewrap needs nested namespaces. Keep the outer container
@@ -97,12 +97,12 @@ func checkIncusInstance(s incusInstance) error {
 	if !validName.MatchString(s.Name) || (s.Type != "container" && s.Type != "virtual-machine") {
 		return errors.New("invalid Incus instance name or type")
 	}
-	if len(s.Profiles) != 0 || s.ExpandedConfig["user.dev-sandbox"] != incusMarker {
+	if len(s.Profiles) != 0 || s.ExpandedConfig["user.devwright"] != incusMarker {
 		return errors.New("unmanaged Incus instance or inherited profiles; create a fresh instance with this recipe")
 	}
 	for key, value := range s.ExpandedConfig {
 		switch {
-		case key == "user.dev-sandbox", key == "limits.cpu", key == "limits.memory", key == "boot.autostart":
+		case key == "user.devwright", key == "limits.cpu", key == "limits.memory", key == "boot.autostart":
 		case strings.HasPrefix(key, "image."), strings.HasPrefix(key, "volatile."):
 		case s.Type == "container" && key == "security.privileged" && value == "false":
 		case s.Type == "container" && (key == "security.nesting" || key == "security.idmap.isolated") && value == "true":
@@ -124,7 +124,7 @@ func checkIncusInstance(s incusInstance) error {
 }
 
 func (v *vm) incusDir() string {
-	return filepath.Join(v.home, ".ssh", "dev-sandbox", "incus", v.name)
+	return filepath.Join(v.home, ".ssh", "devwright", "incus", v.name)
 }
 
 func (v *vm) incusInfo() (instance, error) {
@@ -218,7 +218,7 @@ func (v *vm) bootstrapIncus(state instance) error {
 		return err
 	}
 	key := filepath.Join(state.Dir, "identity")
-	if _, err := v.run([]string{"ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "dev-sandbox-incus-" + state.Name, "-f", key}, nil, true); err != nil {
+	if _, err := v.run([]string{"ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "devwright-incus-" + state.Name, "-f", key}, nil, true); err != nil {
 		return err
 	}
 	public, err := os.ReadFile(key + ".pub")

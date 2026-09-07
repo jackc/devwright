@@ -1,11 +1,11 @@
-package devsandbox
+package devwright
 
 import (
 	"fmt"
 	"os"
 
-	"dev-sandbox/internal/claudepolicy"
-	"dev-sandbox/internal/codexpolicy"
+	"devwright/internal/claudepolicy"
+	"devwright/internal/codexpolicy"
 	"github.com/pelletier/go-toml/v2"
 )
 

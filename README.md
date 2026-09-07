@@ -1,6 +1,13 @@
-# Dev Sandbox
+# Devwright
 
 Isolated development environments for humans and coding agents, using VMs, containers, or restricted native OS accounts.
+
+The project, CLI, and Go module are named `devwright`. Managed paths and native
+accounts use the new name (`devwright-NAME` for native accounts). Existing
+environments created under the former `dev-sandbox` name are not automatically
+migrated; retain the previous executable to manage or remove those environments
+and create fresh environments with `devwright`. Historical results in
+[VALIDATION.md](VALIDATION.md) retain the names used at the time.
 
 ## Development VMs and containers
 
@@ -13,7 +20,7 @@ Administration uses key-only SSH as `root`.
 Choose a backend: Lima **2.2+** and OpenSSH on macOS/Linux, or a local Incus
 server and OpenSSH (including `ssh-keygen`) on Linux. Lima remains the default;
 pass `--backend incus` on every Incus command. Incus requires no Lima installation.
-The `dev-sandbox` Go executable embeds the complete recipe and runs from any directory.
+The `devwright` Go executable embeds the complete recipe and runs from any directory.
 Users of a prebuilt executable need no Go compiler on the host or guest. The CLI
 embeds compiled Linux verifiers for arm64 and amd64 and installs the matching
 one inside the guest. Before operating on an instance,
@@ -41,7 +48,7 @@ mise trust
 mise install
 mise run build
 mkdir -p ~/.local/bin
-install -m 755 .build/dev-sandbox ~/.local/bin/dev-sandbox
+install -m 755 .build/devwright ~/.local/bin/devwright
 export PATH="$HOME/.local/bin:$PATH"  # also add this to your shell startup file
 ```
 
@@ -51,16 +58,16 @@ On macOS, install Lima with `brew install lima`. For other hosts, follow
 Maintainers can build precompiled release archives and a Homebrew formula using
 [the release process below](#development-and-releases). To install an archive,
 extract the one matching your OS (`darwin` for macOS, `linux` for Linux) and CPU
-(`arm64` for Apple Silicon/ARM, `amd64` for Intel/AMD), then install its `dev-sandbox`
+(`arm64` for Apple Silicon/ARM, `amd64` for Intel/AMD), then install its `devwright`
 executable into a directory on PATH. Verify its SHA-256 against the release's
 `checksums.txt`. Release publication and a Homebrew tap must be set up in the
 hosting repository; this source tree does not assume a particular GitHub owner.
 
 ```sh
-dev-sandbox --version
-dev-sandbox --help
-dev-sandbox create dev  # installs and verifies the setup
-dev-sandbox install-ssh dev
+devwright --version
+devwright --help
+devwright create dev  # installs and verifies the setup
+devwright install-ssh dev
 
 ssh lima-dev           # dev: development, Codex, Claude Code, repositories
 ssh root@lima-dev   # root: VM administration
@@ -69,13 +76,13 @@ ssh root@lima-dev   # root: VM administration
 Create another isolated environment with the same recipe, optionally changing resources:
 
 ```sh
-dev-sandbox create another-dev --cpus 8 --memory 8GiB --disk 100GiB
-dev-sandbox install-ssh another-dev
+devwright create another-dev --cpus 8 --memory 8GiB --disk 100GiB
+devwright install-ssh another-dev
 ```
 
 Resource flags apply only to `create` and `render`; omitted values use 4 CPUs,
 4 GiB memory, and a 60 GiB sparse disk. Sizes accept positive whole numbers with
-`MiB`, `GiB`, or `TiB` units. `dev-sandbox render` prints the embedded Lima recipe
+`MiB`, `GiB`, or `TiB` units. `devwright render` prints the embedded Lima recipe
 without contacting Lima or SSH. Options can precede or follow the action/name.
 
 `create` refuses an existing name. The launcher checks that `dev` is the primary account
@@ -98,24 +105,24 @@ during initialization, or select existing ones with `--network` and `--storage`.
 The storage driver must support root disk size limits, for example Btrfs or ZFS.
 The directory driver on an ordinary ext4 filesystem cannot enforce container
 disk quotas. Host networking and storage setup are explicit administrative steps;
-`dev-sandbox` does not modify them.
+`devwright` does not modify them.
 
 ```sh
 # Hardware VM (requires working KVM and Incus's QEMU/firmware dependencies).
-dev-sandbox create dev --backend incus
+devwright create dev --backend incus
 
 # Unprivileged system container (requires no hardware virtualization).
-dev-sandbox create dev-container --backend incus --container
+devwright create dev-container --backend incus --container
 
 # Optional resources, existing storage pool, and managed network.
-dev-sandbox create another-dev --backend incus --container \
+devwright create another-dev --backend incus --container \
   --cpus 8 --memory 8GiB --disk 100GiB --storage default --network incusbr0
 
-dev-sandbox install-ssh dev --backend incus
+devwright install-ssh dev --backend incus
 ssh incus-dev
 ssh root@incus-dev
-dev-sandbox verify dev --backend incus
-dev-sandbox configure dev --backend incus
+devwright verify dev --backend incus
+devwright configure dev --backend incus
 
 incus --force-local --project default stop dev
 incus --force-local --project default start dev
@@ -140,7 +147,7 @@ and other unsupported settings before running guest commands. CPU/memory/disk
 changes should use Incus's own configuration tools.
 
 Each Incus instance gets a new host-side Ed25519 key under
-`~/.ssh/dev-sandbox/incus/NAME/`. Creation sends only its public key through Incus
+`~/.ssh/devwright/incus/NAME/`. Creation sends only its public key through Incus
 to initialize root and dev SSH. The SSH host key is obtained through the local
 Incus control plane and pinned in that directory's `known_hosts`. Provisioning,
 verification, and token transfer then use SSH, with agent forwarding disabled.
@@ -157,13 +164,13 @@ When Incus runs inside Lima, these aliases live inside the Lima host VM.
 If provisioning fails after SSH bootstrap, fix the cause and run `configure`.
 A failure before SSH bootstrap may require deleting the incomplete instance
 with Incus and creating it again. After deliberately deleting an instance, move
-its `~/.ssh/dev-sandbox/incus/NAME/` directory aside before reusing the name. The
+its `~/.ssh/devwright/incus/NAME/` directory aside before reusing the name. The
 launcher refuses to reuse an old instance's identity. It does not automatically
 delete failed instances, images, or host SSH state.
 
 To test nested Incus VMs on a Mac, create a separate Lima Linux host with
 `limactl start --nested-virt --mount-none --containerd=none --name=incus-host template:ubuntu-26.04`,
-install Incus and the Linux `dev-sandbox` executable there, and follow the commands
+install Incus and the Linux `devwright` executable there, and follow the commands
 above. Check `/dev/kvm` and an actual VM boot; the device alone does not prove
 the complete nested VM stack works. Use `--container` when nested VMs cannot boot.
 See [VALIDATION.md](VALIDATION.md) for the tested environment and results.
@@ -179,23 +186,23 @@ never allocates one or creates a listener.
 
 ```sh
 # Run as your normal administrator login; administrative steps invoke sudo.
-dev-sandbox create project-a --backend user
-dev-sandbox install-ssh project-a --backend user
+devwright create project-a --backend user
+devwright install-ssh project-a --backend user
 ssh user-project-a
 # Or enter an interactive shell without installing an SSH alias:
-dev-sandbox shell project-a --backend user
+devwright shell project-a --backend user
 
-dev-sandbox list --backend user
-dev-sandbox verify project-a --backend user
-dev-sandbox configure project-a --backend user
+devwright list --backend user
+devwright verify project-a --backend user
+devwright configure project-a --backend user
 
 # An existing system SSH service using a different port:
-dev-sandbox create project-b --backend user --ssh-port 2222
+devwright create project-b --backend user --ssh-port 2222
 ```
 
 An environment named `project-a` creates account and private group
-`dsb-project-a`, with home `/home/dsb-project-a` on Linux or
-`/Users/dsb-project-a` on macOS. Native environment names have a 28-character
+`devwright-project-a`, with home `/home/devwright-project-a` on Linux or
+`/Users/devwright-project-a` on macOS. Native environment names have a 22-character
 limit. Homes have mode 0700, development credentials have mode 0600, and the
 accounts receive no sudo permissions or administrative groups. macOS accounts
 are hidden from the login window and receive no Secure Token/FileVault setup.
@@ -257,7 +264,7 @@ administratively before using this backend. Site-wide SSH allowlists and other
 access policy may also need host-admin changes, which verification reports.
 
 Each boundary gets a fresh operator-side key under
-`~/.ssh/dev-sandbox/user/NAME/`. The system server's host keys are read through
+`~/.ssh/devwright/user/NAME/`. The system server's host keys are read through
 the local administrative interface and pinned there. A host-key change requires
 operator review; the CLI will not silently replace the pin. Use the same operator
 login for subsequent commands and retain this directory. Generated aliases use
@@ -283,7 +290,7 @@ account's own edits. `--claude-config` and `--replace-claude-config` work;
 `--claude-managed-settings` and `--reset-claude-managed-settings` are rejected
 because the host-wide managed settings file belongs to the host administrator.
 
-Each account gets `~/.config/dev-sandbox/credentials.sh` and Bash/Zsh startup hooks,
+Each account gets `~/.config/devwright/credentials.sh` and Bash/Zsh startup hooks,
 using the same credential convention described below. Configuration preserves
 credential contents, projects, and personal Codex configuration. Optional
 `--dotfiles-repo` / `--dotfiles-install` runs only as the restricted account.
@@ -294,15 +301,15 @@ process environments do not update when credential files change.
 
 ```sh
 # Close the account's shells and stop its processes first.
-dev-sandbox delete project-a --backend user                # preserve its home
-dev-sandbox delete project-b --backend user --remove-home  # explicitly erase it
+devwright delete project-a --backend user                # preserve its home
+devwright delete project-b --backend user --remove-home  # explicitly erase it
 ```
 
 Deletion requires an explicit name and refuses running processes. On Linux,
 systemd's user manager can briefly remain after the last SSH session closes;
 wait for it to exit before retrying. To remove an already retained home, repeat `delete NAME --backend user --remove-home`.
 Retained homes move beneath the root-private
-`/home/.dev-sandbox-archives` or `/Users/.dev-sandbox-archives` directory. The CLI
+`/home/.devwright-archives` or `/Users/.devwright-archives` directory. The CLI
 prints their exact path. Removal never recursively changes the ownership of
 retained files. It removes the account's SSH/sudo entries and the operator's
 managed client files, while leaving the shared SSH service running.
@@ -312,8 +319,8 @@ inspect `sudo launchctl print user/UID` and explicitly unload that user's domain
 with `sudo launchctl bootout user/UID` before retrying deletion. Use the managed
 account's recorded UID; the deletion command does not terminate processes itself.
 
-Root-owned registry records live under `/var/lib/dev-sandbox/users` on Linux or
-`/private/var/db/dev-sandbox/users` on macOS. Deleted records reserve their names
+Root-owned registry records live under `/var/lib/devwright/users` on Linux or
+`/private/var/db/devwright/users` on macOS. Deleted records reserve their names
 and numeric IDs; use another environment name when creating a replacement.
 Interrupted configuration remains recorded and can be retried with `configure`;
 interrupted deletion can be retried with `delete` using the same home-retention
@@ -337,9 +344,9 @@ Remote Login. Run it as your administrator login, **not as root**:
 
 ```sh
 mise run build
-bash tests/users-macos.sh "$PWD/.build/dev-sandbox"
+bash tests/users-macos.sh "$PWD/.build/devwright"
 # Keep fixtures for inspection, then use the printed cleanup command:
-bash tests/users-macos.sh "$PWD/.build/dev-sandbox" --keep
+bash tests/users-macos.sh "$PWD/.build/devwright" --keep
 bash tests/users-macos.sh --cleanup /path/printed/by/the/test
 ```
 
@@ -354,7 +361,7 @@ fixture's user domain when its sole remaining processes are Apple's `distnoted`
 and `cfprefsd`, parented by launchd. Other workloads prevent cleanup and are
 listed with a retry command. The host's system SSH domain is untouched.
 
-For Linux, run `bash tests/users-linux.sh /absolute/path/dev-sandbox` on a prepared
+For Linux, run `bash tests/users-linux.sh /absolute/path/devwright` on a prepared
 host, or `mise run test-users-linux-vm` from this checkout. The VM driver creates a
 stock Ubuntu 26.04 Lima VM with separate Lima state and no host mounts, installs
 test prerequisites and an explicit persistent SSH host key inside that VM, runs
@@ -385,12 +392,12 @@ included settings, overriding its single control socket per VM. Rerun
 `install-ssh` to update a previously installed entry.
 
 Restarting does not run our setup script or update Codex. Your VM's disk and
-installed settings persist. Use `dev-sandbox verify dev` to recheck
+installed settings persist. Use `devwright verify dev` to recheck
 the restrictions without updating tools.
 
 ### Credentials and sign-in
 
-Development credentials live in `/home/dev/.config/dev-sandbox/credentials.sh`,
+Development credentials live in `/home/dev/.config/devwright/credentials.sh`,
 owned by `dev` with mode `0600`, inside a mode `0700` directory. Use shell-quoted
 `export` assignments so child processes inherit the values:
 
@@ -404,11 +411,11 @@ Edit the file as `dev` with your preferred editor:
 
 ```sh
 ssh lima-dev  # or incus-dev
-vi ~/.config/dev-sandbox/credentials.sh
+vi ~/.config/devwright/credentials.sh
 ```
 
 Root can populate the same file administratively, for example by running
-`sudo -u dev -H vi /home/dev/.config/dev-sandbox/credentials.sh`. Keep it owned by
+`sudo -u dev -H vi /home/dev/.config/devwright/credentials.sh`. Keep it owned by
 `dev` with mode `0600` if another editor or deployment tool replaces it.
 
 The recipe creates a commented template only when the file is absent and
@@ -499,7 +506,7 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | --- | --- |
 | `cli.go`, `vm.go`, `incus.go`, `process.go`, `ssh.go` | Host CLI, Lima/Incus orchestration, subprocesses, and SSH configuration |
 | `assets.go` | Embeds the recipe at build time |
-| `lima/dev-sandbox.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
+| `lima/devwright.json` | Lima template (JSON is valid YAML): image base, resources, primary account, plain mode |
 | `lima/bootstrap.sh` | Creation-only setup of key-based root SSH |
 | `incus/bootstrap.sh` | Creation-only SSH/account setup through Incus |
 | `lima/provision.sh` | Shared repeatable OS, account, SSH, development credential hooks, Git authentication, and Codex installation for both backends |
@@ -509,7 +516,7 @@ policy in a fresh task. Installation of the CLI does not authenticate the deskto
 | `config/codex/config.toml` | Initial dev defaults, preserved after first installation |
 | `config/claude/managed-settings.json` | Root-owned, VM-wide managed Claude Code settings |
 | `config/claude/settings.json` | Initial dev Claude Code settings, preserved after first installation |
-| `internal/verification/`, `cmd/dev-sandbox-verify/` | Go Linux, Codex/Claude Code policy, and sandbox acceptance checks |
+| `internal/verification/`, `cmd/devwright-verify/` | Go Linux, Codex/Claude Code policy, and sandbox acceptance checks |
 | `internal/codexpolicy/`, `internal/claudepolicy/` | The managed policy keys the host validates and the verifier compares |
 | `tests/claude-sandbox-lab.py` | Terminal-run lab exercising Claude Code's sandbox without a model or sign-in |
 | `scripts/build-guest.sh`, `guestbin/` | Build and embed the Linux guest verifiers |
@@ -518,11 +525,11 @@ Install the updated executable, then apply its embedded recipe with `configure`.
 Configuration also updates Codex to the latest stable release. When developing
 the recipe, rebuild and reinstall after editing the shared source.
 The versions installed during provisioning are recorded
-in `/usr/local/share/dev-sandbox/codex-version` and `claude-version` for diagnostics;
+in `/usr/local/share/devwright/codex-version` and `claude-version` for diagnostics;
 verification checks actual policy behavior rather than requiring those exact versions:
 
 ```sh
-dev-sandbox configure dev  # applies the recipe and verifies it
+devwright configure dev  # applies the recipe and verifies it
 ```
 
 During creation, Lima initially grants `dev` sudo. The creation-only bootstrap
@@ -552,18 +559,18 @@ replace either complete file; settings are not merged and project directories
 are not searched automatically. The Lima and Incus backends support these options:
 
 ```sh
-dev-sandbox create my-dev \
+devwright create my-dev \
   --codex-requirements ./requirements.toml \
   --codex-config ./config.toml
 
 # Select a different policy for an existing VM.
-dev-sandbox configure my-dev --codex-requirements ./requirements.toml
+devwright configure my-dev --codex-requirements ./requirements.toml
 
 # Explicitly replace an existing personal config.
-dev-sandbox configure my-dev --codex-config ./config.toml --replace-codex-config
+devwright configure my-dev --codex-config ./config.toml --replace-codex-config
 
 # Stop using a custom policy and restore the executable's embedded policy.
-dev-sandbox configure my-dev --reset-codex-requirements
+devwright configure my-dev --reset-codex-requirements
 ```
 
 Files are read and checked for valid TOML before contacting the instance manager.
@@ -572,7 +579,7 @@ a schema error can therefore fail setup after the files have been installed.
 Correct the files and rerun `configure` with the override options.
 
 `--codex-requirements` installs `/etc/codex/requirements.toml` and saves a root-owned
-copy at `/usr/local/share/dev-sandbox/custom-requirements.toml`. Future `configure`
+copy at `/usr/local/share/devwright/custom-requirements.toml`. Future `configure`
 runs restore that saved selection, even if the original host file is gone.
 Supplying a new file replaces the saved selection. `--reset-codex-requirements`
 removes it and restores the embedded policy. VMs without a custom selection get
@@ -618,17 +625,17 @@ Validation works offline; settings added by newer Claude releases may require
 updating the [schema snapshot](internal/claudepolicy/schema/README.md).
 
 ```sh
-dev-sandbox create my-dev \
+devwright create my-dev \
   --claude-managed-settings ./managed-settings.json \
   --claude-config ./settings.json
 
-dev-sandbox configure my-dev --claude-managed-settings ./managed-settings.json
-dev-sandbox configure my-dev --claude-config ./settings.json --replace-claude-config
-dev-sandbox configure my-dev --reset-claude-managed-settings
+devwright configure my-dev --claude-managed-settings ./managed-settings.json
+devwright configure my-dev --claude-config ./settings.json --replace-claude-config
+devwright configure my-dev --reset-claude-managed-settings
 ```
 
 The selection, restore, reset, and replace rules match the Codex options above,
-with the custom copy saved as `/usr/local/share/dev-sandbox/custom-managed-settings.json`.
+with the custom copy saved as `/usr/local/share/devwright/custom-managed-settings.json`.
 The embedded policy turns the Bash sandbox on and refuses to start without it,
 forbids unsandboxed retries and bypass mode, denies the same secret paths as the
 Codex policy plus both agents' sign-in files to sandboxed commands and to the
@@ -662,8 +669,8 @@ report the behavior probe as **not tested**.
 Pass your own Git repository when creating or configuring a VM:
 
 ```sh
-dev-sandbox create my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git
-dev-sandbox configure my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git --dotfiles-install setup.sh
+devwright create my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git
+devwright configure my-dev --dotfiles-repo https://github.com/OWNER/dotfiles.git --dotfiles-install setup.sh
 ```
 
 No dotfiles are installed by default. The default installer is `install`; use
@@ -674,7 +681,7 @@ and SHELL. It is responsible for its dependencies, backups, startup files, and
 any shell preferences; the recipe does not assume Mise or Zsh.
 
 Both `root` and `dev` get independent checkouts at
-`~/.local/share/dev-sandbox/dotfiles`. The installer runs as each account, so it must
+`~/.local/share/devwright/dotfiles`. The installer runs as each account, so it must
 support `dev` without sudo. Only supply repositories you trust to run as root.
 The repository must be accessible from both guest accounts; host credentials
 and SSH agents are not forwarded. Public HTTPS repositories work without setup.
@@ -701,14 +708,14 @@ If setup fails, fix the cause and rerun `configure`; restarting does not retry i
 Applicable acceptance checks run during `create`, `configure`, and `verify`. Lima
 startup does not run our verification.
 
-Resource/image changes in `dev-sandbox.json` apply to newly created VMs after rebuilding.
+Resource/image changes in `devwright.json` apply to newly created VMs after rebuilding.
 Use `--cpus`, `--memory`, and `--disk` for per-VM resource choices during creation.
 Change existing VM resources with Lima's own stopped-instance editing workflow. Run Ubuntu
 security upgrades administratively as needed; package installation is not a
 substitute for a guest patching policy.
 
 `install-ssh` adds an Include to `~/.ssh/config`, backs up that file before
-changing it, and stores a small SSH entry under `~/.ssh/dev-sandbox/`. The entry includes
+changing it, and stores a small SSH entry under `~/.ssh/devwright/`. The entry includes
 Lima's own SSH configuration and defaults to `dev`; `root@` overrides the user. It refuses
 to overwrite an unrelated generated-file target or rewrite a symlinked SSH
 config. `ssh-config` prints the entry instead if you manage SSH configuration
@@ -789,7 +796,7 @@ are not changed. It requires the recipe's packages, `ip`, `unshare`, and overlay
 
 ```sh
 mise run check                         # Go tests/vet, verifier tests, Bash syntax
-mise run build                         # .build/dev-sandbox, recipe and guest verifiers embedded
+mise run build                         # .build/devwright, recipe and guest verifiers embedded
 mise exec -- go test -race ./...
 mise run release v0.1.0                 # four OS/CPU archives and checksums
 # Supply the actual hosting repository to also generate a Homebrew formula:
@@ -824,8 +831,8 @@ virtualization setup.
 GitHub Actions runs checks on macOS and Linux. Pushing a `vX.Y.Z` tag runs checks,
 builds the four archives and Homebrew formula using the hosting repository's name,
 and creates a **draft** GitHub release. Review and publish the draft, then copy
-its generated `dev-sandbox.rb` into `Formula/dev-sandbox.rb` in your Homebrew tap. Users
-can then install with `brew install OWNER/TAP/dev-sandbox`; the formula depends on
+its generated `devwright.rb` into `Formula/devwright.rb` in your Homebrew tap. Users
+can then install with `brew install OWNER/TAP/devwright`; the formula depends on
 Lima on macOS; install your chosen backend separately on Linux. Replace OWNER/TAP with the actual tap name. No public release or tap is
 created by a local build.
 

@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"os"
@@ -109,7 +109,7 @@ func TestMacOSFixtureIdentityBeforeDomainCleanup(t *testing.T) {
 			// script continues to use fixed paths for Directory Services/plutil.
 			script := `set -eu
 mode=$1
-base=/private/var/db/dev-sandbox
+base=/private/var/db/devwright
 homes=/Users
 names=(nta ntb)
 id() {
@@ -121,7 +121,7 @@ id() {
 function /usr/bin/dscl() {
   case "$4" in
     GeneratedUID) if [ "$mode" = guid ]; then echo 'GeneratedUID: DIFFERENT'; else echo 'GeneratedUID: FIXTURE-GUID'; fi ;;
-    NFSHomeDirectory) if [ "$mode" = home ]; then echo 'NFSHomeDirectory: /Users/unrelated'; else echo 'NFSHomeDirectory: /Users/dsb-nta'; fi ;;
+    NFSHomeDirectory) if [ "$mode" = home ]; then echo 'NFSHomeDirectory: /Users/unrelated'; else echo 'NFSHomeDirectory: /Users/devwright-nta'; fi ;;
     *) return 91 ;;
   esac
 }
@@ -141,8 +141,8 @@ sudo() {
         owner) if [ "$mode" = operator ]; then echo 502; else echo 501; fi ;;
         version) if [ "$mode" = version ]; then echo 2; else echo 1; fi ;;
         name) if [ "$mode" = record-name ]; then echo ntb; else echo nta; fi ;;
-        account) if [ "$mode" = record-account ]; then echo dsb-other; else echo dsb-nta; fi ;;
-        home) if [ "$mode" = record-home ]; then echo /Users/unrelated; else echo /Users/dsb-nta; fi ;;
+        account) if [ "$mode" = record-account ]; then echo devwright-other; else echo devwright-nta; fi ;;
+        home) if [ "$mode" = record-home ]; then echo /Users/unrelated; else echo /Users/devwright-nta; fi ;;
         *) return 91 ;;
       esac ;;
     *) return 91 ;;

@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"os"
@@ -139,13 +139,13 @@ func provisionSection(t *testing.T, root string, o options, marker string, paths
 		}
 		return body
 	}
-	body := "policy_dir=/usr/local/share/dev-sandbox\n" + between("# BEGIN AGENT FUNCTIONS\n", "# END AGENT FUNCTIONS") +
+	body := "policy_dir=/usr/local/share/devwright\n" + between("# BEGIN AGENT FUNCTIONS\n", "# END AGENT FUNCTIONS") +
 		between("# BEGIN "+marker+" FILES\n", "# END "+marker+" FILES")
 	body = strings.ReplaceAll(body, "chown dev:dev", "true")
 	if runtime.GOOS == "darwin" {
 		body = strings.ReplaceAll(body, "mv -fT", "mv -f")
 	}
-	for _, path := range append([]string{"/usr/local/share/dev-sandbox"}, paths...) {
+	for _, path := range append([]string{"/usr/local/share/devwright"}, paths...) {
 		body = strings.ReplaceAll(body, path, root+path)
 	}
 	if out, err := exec.Command("bash", "-c", "set -euo pipefail\n"+strings.Join(header, "\n")+"\n"+body).CombinedOutput(); err != nil {
@@ -163,7 +163,7 @@ func wantFile(t *testing.T, path, value string) {
 
 func TestCodexFileLifecycle(t *testing.T) {
 	root := t.TempDir()
-	for _, dir := range []string{"/etc/codex", "/usr/local/share/dev-sandbox", "/home/dev/.codex"} {
+	for _, dir := range []string{"/etc/codex", "/usr/local/share/devwright", "/home/dev/.codex"} {
 		if err := os.MkdirAll(root+dir, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +203,7 @@ func TestCodexFileLifecycle(t *testing.T) {
 
 func TestClaudeFileLifecycle(t *testing.T) {
 	root := t.TempDir()
-	for _, dir := range []string{"/etc/claude-code/managed-settings.d", "/usr/local/share/dev-sandbox", "/home/dev/.claude"} {
+	for _, dir := range []string{"/etc/claude-code/managed-settings.d", "/usr/local/share/devwright", "/home/dev/.claude"} {
 		if err := os.MkdirAll(root+dir, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +232,7 @@ func TestClaudeFileLifecycle(t *testing.T) {
 			t.Fatalf("policy drift left behind: %s", path)
 		}
 	}
-	if _, err := os.Stat(root + "/usr/local/share/dev-sandbox/managed-settings.sha256"); err != nil {
+	if _, err := os.Stat(root + "/usr/local/share/devwright/managed-settings.sha256"); err != nil {
 		t.Fatal(err)
 	}
 	os.Remove(policy)

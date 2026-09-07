@@ -1,4 +1,4 @@
-module dev-sandbox
+module devwright
 
 go 1.25.0
 

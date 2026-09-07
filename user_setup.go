@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"bytes"
@@ -79,7 +79,7 @@ rm -f "$claude_installer"
 trap - EXIT
 "$HOME/.local/bin/claude" --version
 if [ -n "$repository" ]; then
- dotfiles="$HOME/.local/share/dev-sandbox/dotfiles"
+ dotfiles="$HOME/.local/share/devwright/dotfiles"
  mkdir -p "$(dirname "$dotfiles")"
  if [ ! -e "$dotfiles" ]; then git clone -- "$repository" "$dotfiles"; else
   test "$(git -C "$dotfiles" remote get-url origin)" = "$repository"

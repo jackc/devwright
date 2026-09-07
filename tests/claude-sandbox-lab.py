@@ -35,7 +35,7 @@ echo "PROBE write-cwd: $(touch ./workspace-write-ok 2>/dev/null && echo ok || ec
 echo "PROBE write-sibling: $(sh -c "echo changed > \"$SIBLING\"" 2>/dev/null && echo ALLOWED || echo denied)"
 # Linux masks denied files with /dev/null, so a successful empty read is safe.
 canary_content=$(cat "$CANARY" 2>/dev/null)
-if [ "$canary_content" = dev-sandbox-synthetic-canary ]; then
+if [ "$canary_content" = devwright-synthetic-canary ]; then
   echo 'PROBE read-canary: READABLE'
 else
   echo 'PROBE read-canary: denied'
@@ -206,7 +206,7 @@ def main():
     sibling = os.path.join(fixture, "sibling")
     probe = os.path.join(fixture, "probe.sh")
     with open(canary, "w") as handle:
-        handle.write("dev-sandbox-synthetic-canary\n")
+        handle.write("devwright-synthetic-canary\n")
     with open(sibling, "w") as handle:
         handle.write("original")
     with open(probe, "w") as handle:

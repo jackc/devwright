@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"bytes"
@@ -54,9 +54,9 @@ type userReply struct {
 
 func userHome(name, goos string) string {
 	if goos == "darwin" {
-		return "/Users/dsb-" + name
+		return "/Users/devwright-" + name
 	}
-	return "/home/dsb-" + name
+	return "/home/devwright-" + name
 }
 
 func requestForUser(o options) userRequest {
@@ -77,13 +77,13 @@ func runUserBackend(ctx context.Context, o options, stdin io.Reader, stdout, std
 			claudeSource = o.claudeConfig
 		}
 		return json.NewEncoder(stdout).Encode(map[string]any{
-			"backend": "user", "account": "dsb-" + o.name, "group": "dsb-" + o.name,
+			"backend": "user", "account": "devwright-" + o.name, "group": "devwright-" + o.name,
 			"home": userHome(o.name, runtime.GOOS), "home_mode": "0700",
 			"ssh_host": "localhost", "ssh_port": o.sshPort, "ssh_service": "existing system OpenSSH",
 			"codex_policy":  "editable user defaults; host requirements untouched",
 			"claude_policy": "editable user defaults; host managed settings untouched",
 			"provisioning": map[string]any{
-				"run_as": "dsb-" + o.name, "codex": "latest stable release in ~/.local/bin", "claude": "latest release in ~/.local/bin",
+				"run_as": "devwright-" + o.name, "codex": "latest stable release in ~/.local/bin", "claude": "latest release in ~/.local/bin",
 				"config_source": configSource, "replace_config": o.replaceCodexConfig,
 				"claude_config_source": claudeSource, "replace_claude_config": o.replaceClaudeConfig,
 				"dotfiles_repository": o.dotfilesRepo, "dotfiles_installer": o.dotfilesInstall,
@@ -131,7 +131,7 @@ func runUserBackend(ctx context.Context, o options, stdin io.Reader, stdout, std
 		return reply, nil
 	}
 	req := requestForUser(o)
-	dir := filepath.Join(home, ".ssh", "dev-sandbox", "user", o.name)
+	dir := filepath.Join(home, ".ssh", "devwright", "user", o.name)
 	key := filepath.Join(dir, "id_ed25519")
 	if o.action == "create" {
 		check := req
@@ -152,10 +152,10 @@ func runUserBackend(ctx context.Context, o options, stdin io.Reader, stdout, std
 				return fmt.Errorf("make native SSH directory private: %w", err)
 			}
 		}
-		if err := os.WriteFile(filepath.Join(dir, "managed"), []byte("dev-sandbox-user-v1\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "managed"), []byte("devwright-user-v1\n"), 0600); err != nil {
 			return err
 		}
-		cmd := exec.CommandContext(ctx, "/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "dev-sandbox-user-"+o.name, "-f", key)
+		cmd := exec.CommandContext(ctx, "/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "devwright-user-"+o.name, "-f", key)
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
 			return err
@@ -236,7 +236,7 @@ func runUserBackend(ctx context.Context, o options, stdin io.Reader, stdout, std
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("native SSH verification failed: %w; check the system SSH service, access policy, and port %d", err, s.Port)
 		}
-		fmt.Fprintf(stdout, "Verified %s. Access: dev-sandbox shell %s --backend user\n", s.Account, s.Name)
+		fmt.Fprintf(stdout, "Verified %s. Access: devwright shell %s --backend user\n", s.Account, s.Name)
 		return nil
 	}
 }
@@ -267,7 +267,7 @@ func checkUserClient(dir, public string) error {
 		}
 	}
 	marker, err := os.ReadFile(filepath.Join(dir, "managed"))
-	if err != nil || string(marker) != "dev-sandbox-user-v1\n" {
+	if err != nil || string(marker) != "devwright-user-v1\n" {
 		return errors.New("unmanaged native SSH identity")
 	}
 	pub, err := os.ReadFile(filepath.Join(dir, "id_ed25519.pub"))
@@ -287,13 +287,13 @@ func userSSHConfig(s userState, dir string) string {
 	return fmt.Sprintf("Host user-%s\n  HostName localhost\n  User %s\n  Port %d\n  IdentityFile %s\n  UserKnownHostsFile %s\n  HostKeyAlias user-%s\n  StrictHostKeyChecking yes\n  IdentitiesOnly yes\n  IdentityAgent none\n  ForwardAgent no\n  ControlMaster no\n  ControlPath none\n\nHost *\n", s.Name, s.Account, s.Port, quote(filepath.Join(dir, "id_ed25519")), quote(filepath.Join(dir, "known_hosts")), s.Name)
 }
 func removeUserClient(home, name string) error {
-	dir := filepath.Join(home, ".ssh", "dev-sandbox", "user", name)
+	dir := filepath.Join(home, ".ssh", "devwright", "user", name)
 	if info, err := os.Lstat(dir); err == nil {
 		if !info.IsDir() {
 			return errors.New("refusing non-directory client identity")
 		}
 		data, err := os.ReadFile(filepath.Join(dir, "managed"))
-		if err != nil || string(data) != "dev-sandbox-user-v1\n" {
+		if err != nil || string(data) != "devwright-user-v1\n" {
 			return errors.New("refusing to remove unmanaged client identity")
 		}
 		for _, file := range []string{"managed", "id_ed25519", "id_ed25519.pub", "known_hosts"} {
@@ -307,7 +307,7 @@ func removeUserClient(home, name string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	config := filepath.Join(home, ".ssh", "dev-sandbox", name+".user.config")
+	config := filepath.Join(home, ".ssh", "devwright", name+".user.config")
 	if info, err := os.Lstat(config); err == nil {
 		if !info.Mode().IsRegular() {
 			return errors.New("refusing non-regular SSH configuration")

@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"bytes"
@@ -129,7 +129,7 @@ func TestIncusPreflightDoesNotRequireLima(t *testing.T) {
 
 func TestIncusRejectsUnsafeResolvedConfiguration(t *testing.T) {
 	for name, change := range map[string]func(*incusInstance){
-		"unmanaged":         func(s *incusInstance) { delete(s.ExpandedConfig, "user.dev-sandbox") },
+		"unmanaged":         func(s *incusInstance) { delete(s.ExpandedConfig, "user.devwright") },
 		"profiles":          func(s *incusInstance) { s.Profiles = []string{"default"} },
 		"privileged":        func(s *incusInstance) { s.ExpandedConfig["security.privileged"] = "true" },
 		"idmap":             func(s *incusInstance) { delete(s.ExpandedConfig, "security.idmap.isolated") },
@@ -299,7 +299,7 @@ func TestIncusSSHConfigurationAndLimaCoexist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	limaPath := filepath.Join(v.home, ".ssh", "dev-sandbox", "incus-test.config")
+	limaPath := filepath.Join(v.home, ".ssh", "devwright", "incus-test.config")
 	writeTestFile(t, limaPath, "personal Lima entry")
 	if err := v.installSSH(state); err != nil {
 		t.Fatal(err)

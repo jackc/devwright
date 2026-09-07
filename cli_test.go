@@ -1,4 +1,4 @@
-package devsandbox
+package devwright
 
 import (
 	"bytes"
@@ -59,7 +59,7 @@ func TestOfflineCommands(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--help"}, "Usage: dev-sandbox"}, {[]string{"--version"}, "dev-sandbox v1.2.3\n"},
+		{[]string{"--help"}, "Usage: devwright"}, {[]string{"--version"}, "devwright v1.2.3\n"},
 		{[]string{"render", "--memory", "8GiB"}, `"memory": "8GiB"`},
 	} {
 		var output bytes.Buffer

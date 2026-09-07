@@ -1,8 +1,8 @@
-// dev-sandbox-verify is installed in the guest; it needs no compiler or interpreter.
+// devwright-verify is installed in the guest; it needs no compiler or interpreter.
 package main
 
 import (
-	"dev-sandbox/internal/verification"
+	"devwright/internal/verification"
 	"fmt"
 	"io"
 	"os"
@@ -32,7 +32,7 @@ func main() {
 	case len(os.Args) == 4 && os.Args[1] == "claude-probe":
 		err = verification.ClaudeProbe(os.Args[2], os.Args[3], os.Stdout)
 	default:
-		err = fmt.Errorf("usage: dev-sandbox-verify [sandbox-probe CANARY SIBLING | claude-probe CANARY SIBLING]")
+		err = fmt.Errorf("usage: devwright-verify [sandbox-probe CANARY SIBLING | claude-probe CANARY SIBLING]")
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
