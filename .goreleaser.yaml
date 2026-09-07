@@ -1,0 +1,35 @@
+version: 2
+project_name: devwright
+dist: .build/releases
+before:
+  hooks:
+    - bash scripts/release-prepare.sh
+builds:
+  - id: devwright
+    main: ./cmd/devwright
+    binary: devwright
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [arm64, amd64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version=v{{ .Version }}
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - DEVELOPMENT.md
+      - VALIDATION.md
+      - CLAUDE-CODE-DESIGN.md
+      - docs/**
+      - src: .build/release-licenses/*.txt
+        dst: licenses
+        strip_parent: true
+checksum:
+  name_template: checksums.txt
+changelog:
+  sort: asc
+release:
+  prerelease: auto

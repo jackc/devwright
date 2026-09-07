@@ -31,9 +31,10 @@ are not changed. It requires the recipe's packages, `ip`, `unshare`, and overlay
 mise run check                         # Go tests/vet, verifier tests, Bash syntax
 mise run build                         # .build/devwright, recipe and guest verifiers embedded
 mise exec -- go test -race ./...
-mise run release v0.1.0                 # four OS/CPU archives and checksums
-# Supply the actual hosting repository to also generate a Homebrew formula:
-mise run release v0.1.0 OWNER/REPO
+mise run release                       # local snapshot; never publishes
+mise exec -- goreleaser check           # validate release configuration
+# At a clean, tagged commit (requires gh and GITHUB_REPOSITORY or GitHub access):
+mise run release build                 # tagged archives, checksums, and formula; no upload
 ```
 
 Run `mise trust` and `mise install` when setting up a checkout. If mise is
@@ -55,20 +56,35 @@ Provisioning selects the guest architecture with `uname -m`; it installs no Ruby
 or Go runtime. Existing environments need one `configure` run with the rebuilt
 CLI before using its `verify` command, which now invokes the compiled verifier.
 
-Release files are written to `.build/releases/VERSION/`. Archives contain the
+Release files are written to `.build/releases/`. Archives contain the
 executable, documentation, and dependency license notices. `CGO_ENABLED=0` keeps
 builds free of C library dependencies on Linux. macOS binaries still use OS
 libraries. Builds cover macOS/Linux on arm64/amd64; full VM acceptance has been
 exercised on macOS arm64. Cross-compilation alone does not validate other hosts'
 virtualization setup.
 
-GitHub Actions runs checks on macOS and Linux. Pushing a `vX.Y.Z` tag runs checks,
-builds the four archives and Homebrew formula using the hosting repository's name,
-and creates a **draft** GitHub release. Review and publish the draft, then copy
-its generated `devwright.rb` into `Formula/devwright.rb` in your Homebrew tap. Users
-can then install with `brew install OWNER/TAP/devwright`; the formula depends on
-Lima on macOS; install your chosen backend separately on Linux. Replace OWNER/TAP
-with the actual tap name. No public release or tap is created by a local build.
+GitHub Actions runs checks on macOS and Linux. Pushing a `vX.Y.Z` tag runs checks
+and uses the pinned GoReleaser version to build and upload the four archives and
+checksums. The release script adds the Homebrew formula and publishes the release
+only after all assets have uploaded. GoReleaser is configured in `.goreleaser.yaml`;
+its preparation hook rebuilds the embedded verifiers and collects license notices.
+
+To release, commit the changes, tag the commit, and push the branch and tag:
+
+```sh
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin HEAD v0.1.0
+```
+
+For a manual release from a clean tagged checkout, set `GITHUB_TOKEN` and run
+`mise run release publish`. Do not run it while the tag workflow is publishing.
+Local `snapshot` and `build` modes do not publish. All modes replace the contents
+of `.build/releases/`.
+
+Copy the release's generated `devwright.rb` into `Formula/devwright.rb` in your
+Homebrew tap. Users can then install with `brew install OWNER/TAP/devwright`;
+the formula depends on Lima on macOS. Install your chosen backend separately on
+Linux. Replace OWNER/TAP with the actual tap name.
 
 ## Source map
 
