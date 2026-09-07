@@ -1,8 +1,7 @@
 # Claude Code controls: design
 
 Design date: September 6, 2026. Status: **implemented in the CLI, recipe, and
-verifier on the same day; host tests pass, guest acceptance in a VM is still
-pending** (see [VALIDATION.md](VALIDATION.md)). It gives Claude Code the same
+verifier on the same day; host tests and Lima VM guest acceptance passed** (see [VALIDATION.md](VALIDATION.md)). It gives Claude Code the same
 treatment the recipe gives Codex: a root-owned, VM-wide managed policy that the
 `dev` account cannot loosen, an editable personal config that provisioning
 preserves, host-side override flags, and credential-free acceptance checks.
@@ -13,7 +12,8 @@ and [config/codex/config.toml](config/codex/config.toml), the project goals in
 consolidated findings from the research branches (`OPTIONS.md`, `FINDINGS.md`),
 and the [Claude Code documentation](https://code.claude.com/docs/en/managed-settings)
 as of Claude Code 2.1.261. Everything marked **verified** below was checked on
-this Mac today with the local `claude` binary; nothing has run in a guest yet.
+this Mac with the local `claude` binary; subsequent guest results are recorded
+in VALIDATION.md.
 
 ## Summary of the mapping
 
@@ -251,7 +251,7 @@ Everything below is credential-free and uses synthetic files only.
    the managed file on Linux (**verified**). Releases that print only the
    legacy status object skip this comparison with a NOT TESTED line.
 4. `claude doctor` output is captured for diagnostics only; it is prose.
-5. **Sandbox behaviour probe, embedded policy only.** The verifier starts a
+5. **Sandbox behaviour probes, embedded and custom policies.** The verifier starts a
    loopback HTTP stub of the Messages API on `127.0.0.1:0`, then runs, as dev,
    in a fixture under `~/projects/verify-XXXX/workspace`:
 
@@ -268,26 +268,32 @@ Everything below is credential-free and uses synthetic files only.
    `credentials.sh` cannot redirect the request away from the stub.
 
    The stub answers the first request with a streamed `tool_use` block for
-   `Bash` whose command is `/usr/local/share/devwright/verify claude-probe
+   `Bash` whose command is `/usr/local/share/devwright/verify access-probe
    CANARY SIBLING`, and the second request, which carries the `tool_result`,
-   with `end_turn`. The probe is the existing `SandboxProbe`: workspace write
-   succeeds, outside-workspace write is denied, the canary read (a synthetic
-   `~/.pgpass`, refused if one exists) is denied. The stub relays the tool
-   result to the verifier, which also checks the sibling file is unchanged and
-   the JSON result has `subtype: "success"`. A second run passes
-   `--settings '{"sandbox":{"filesystem":{"allowRead":["~/.pgpass"]}}}'` and
-   must still report the canary denied, proving `allowManagedReadPathsOnly`
-   holds; this is the counterpart of Codex rejecting a conflicting override.
+   with `end_turn`. The current command is `access-probe`; it emits structured
+   observations for workspace writes, outside-workspace writes, and synthetic
+   `~/.pgpass` reads. Each observation is assessed separately against known
+   policy expectations. Permissive behavior is not inherently a failure;
+   complex policy expectations are explicitly reported as unknown.
+
+   A second run passes
+   `--settings '{"sandbox":{"filesystem":{"allowRead":["~/.pgpass"]}}}'`.
+   If the managed policy denies the canary and locks managed read paths, that
+   denial must still hold. Otherwise this run reports the override's effect
+   without assuming denial. Both sessions use the actual managed settings.
    `--bare` reads no OAuth credentials or keychain and skips hooks, plugins and
-   memory, so the run touches nothing personal; `CLAUDE_CONFIG_DIR` keeps
-   session state inside the fixture. The guest runs confirmed that managed
-   settings apply under `--bare`: the canary denial and the lock test depend
-   on it. Only the probe's own `did not hold` report counts as an enforcement
-   failure; a session that never ran the probe is reported as not run, with
-   hints about bubblewrap, socat, the AppArmor profile and containers.
-6. A custom policy reports the behaviour probe as **NOT TESTED**, exactly as
-   Codex does, and the run ends with the existing "authenticated model run,
-   private repository scope, desktop-provided tool inventory" not-tested line.
+   memory; `CLAUDE_CONFIG_DIR` keeps session state inside the fixture.
+
+   An existing `~/.pgpass` is preserved without reading it: canary and override
+   checks are safely skipped while write probes still run. Unexpected I/O errors
+   and incomplete sessions are execution failures, separate from mismatches.
+6. Custom policies receive the same probes. Independent behavioral checks run
+   even after another fails. Known enforcement mismatches and execution errors
+   produce a nonzero exit status after the report; unknown expectations and safe
+   skips remain visible without failing it. Ownership/checksum and other unsafe
+   prerequisite failures may still prevent dependent checks. Authenticated model
+   runs, repository scope, desktop tools, and network behavior are not established
+   by these filesystem probes.
 
 The stub approach was prototyped on this Mac today (**verified**, see
 "Validation performed"): the nested session completed in two turns, the

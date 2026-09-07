@@ -27,6 +27,8 @@ func main() {
 		err = verification.NativeSandboxProbe(os.Args[2], os.Stdout)
 	case len(os.Args) == 1:
 		err = verification.Check(os.Stdout)
+	case len(os.Args) == 4 && os.Args[1] == "access-probe":
+		err = verification.AccessProbe(os.Args[2], os.Args[3], os.Stdout)
 	case len(os.Args) == 4 && os.Args[1] == "sandbox-probe":
 		err = verification.SandboxProbe(os.Args[2], os.Args[3], os.Stdout)
 	case len(os.Args) == 4 && os.Args[1] == "claude-probe":

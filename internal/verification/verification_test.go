@@ -101,8 +101,16 @@ func TestExistingCanaryIsNeverReadOrRemoved(t *testing.T) {
 		} else if err := os.WriteFile(path, []byte("existing synthetic content"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		err := sandboxCheck(home, io.Discard)
-		if err == nil || !strings.Contains(err.Error(), "already exists") {
+		if err := os.Mkdir(filepath.Join(home, "projects"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		err := withBehaviorFixture(home, func(f behaviorFixture) error {
+			if f.canary != "-" {
+				t.Fatalf("existing canary was selected: %s", f.canary)
+			}
+			return nil
+		})
+		if err != nil {
 			t.Fatalf("canary: %v", err)
 		}
 		if symlink {
@@ -178,48 +186,6 @@ func TestManagedPolicyChecks(t *testing.T) {
 				}
 			} else if err == nil {
 				t.Fatalf("accepted %s policy", mode)
-			}
-		})
-	}
-}
-
-func TestSandboxFixturesCleanedOnSuccessAndFailure(t *testing.T) {
-	for _, mode := range []string{"success", "probe-failure", "override-accepted", "sibling-changed"} {
-		t.Run(mode, func(t *testing.T) {
-			home, bin := t.TempDir(), t.TempDir()
-			if err := os.Mkdir(filepath.Join(home, "projects"), 0700); err != nil {
-				t.Fatal(err)
-			}
-			// A fake Codex tests orchestration and cleanup; actual sandbox enforcement
-			// is exercised only by the installed guest verifier against real Codex.
-			script := `#!/bin/sh
-for arg do
-  if [ "$arg" = -c ]; then
-    if [ "$TEST_SANDBOX_MODE" = override-accepted ]; then exit 0; fi
-    echo 'conflicts with a config-defined profile' >&2
-    exit 1
-  fi
-  last=$arg
-done
-if [ "$TEST_SANDBOX_MODE" = probe-failure ]; then exit 1; fi
-if [ "$TEST_SANDBOX_MODE" = sibling-changed ]; then printf changed > "$last"; fi
-echo 'PASS Codex synthetic fixture'
-`
-			if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0755); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			t.Setenv("TEST_SANDBOX_MODE", mode)
-			err := sandboxCheck(home, io.Discard)
-			if (err == nil) != (mode == "success") {
-				t.Fatalf("mode %s: %v", mode, err)
-			}
-			if _, err := os.Lstat(filepath.Join(home, ".pgpass")); !os.IsNotExist(err) {
-				t.Fatalf("canary left behind: %v", err)
-			}
-			entries, err := os.ReadDir(filepath.Join(home, "projects"))
-			if err != nil || len(entries) != 0 {
-				t.Fatalf("fixture left behind: %v %v", entries, err)
 			}
 		})
 	}

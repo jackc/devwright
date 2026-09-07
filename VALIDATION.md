@@ -1,5 +1,26 @@
 # Native users, Lima, Incus, and Codex validation
 
+## Behavioral reports for custom policies
+
+Updated September 7, 2026. VM/container verification now measures workspace
+writes, outside-workspace writes, synthetic `~/.pgpass` reads, and lower-scope
+read overrides for both embedded and custom Codex/Claude policies. Observed
+access is reported separately from policy expectations. Known mismatches and
+execution failures fail verification after independent checks finish; unknown
+expectations and safe skips remain visible without failing it. Existing secret
+files and symlinks are preserved, and only the read/override probes are skipped.
+
+- `mise run check` passed, including Go tests, host/guest builds, Go vet, Python
+  tests, and Bash syntax checks. Tests used `.build/go-cache`; loopback-enabled
+  runs exercised the local Claude Messages API stub.
+- `go test -race -count=1 ./...` passed with loopback access, including the new
+  Claude report sessions without cached or skipped results.
+- New regression coverage includes permissive access, semantic policy matching,
+  custom Codex profile selection, override failures, continued observations after
+  mismatches/I/O failures, missing reports, and fixture cleanup on failure.
+- Live VM/container acceptance was not rerun. Existing environments need
+  `configure` with the rebuilt CLI to install the updated verifier.
+
 ## Devwright rename
 
 Validated September 7, 2026 on macOS arm64. The project, executable, Go module,

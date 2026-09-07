@@ -187,31 +187,28 @@ func checkClaude(home string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("managed settings: %w", err)
 	}
+	var failures []error
 	status, err := claudeSandboxStatus(claude, filepath.Join(home, "projects"))
 	if err != nil {
-		return err
-	}
-	if status.StatusVersion >= 2 {
+		fmt.Fprintf(out, "ERROR Claude Code sandbox posture: %v\n", err)
+		failures = append(failures, err)
+	} else if status.StatusVersion >= 2 {
 		if err := checkClaudePosture(selected, status); err != nil {
-			return err
+			fmt.Fprintf(out, "FAIL Claude Code sandbox posture: %v\n", err)
+			failures = append(failures, err)
+		} else {
+			fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, drop-in absence, and reported sandbox posture")
 		}
-		fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, drop-in absence, and reported sandbox posture")
 	} else {
 		fmt.Fprintln(out, "PASS Claude Code managed policy ownership, checksum, and drop-in absence")
 		fmt.Fprintln(out, "NOT TESTED: reported sandbox posture; this Claude Code release prints no posture fields on Linux")
 	}
 	if err := checkSandboxProfile(out, "/etc/apparmor.d", "/usr/local/share/devwright/bwrap-profile.sha256", "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"); err != nil {
-		return err
+		fmt.Fprintf(out, "FAIL bwrap AppArmor profile: %v\n", err)
+		failures = append(failures, err)
 	}
-	bundled, err := os.ReadFile("/usr/local/share/devwright/default-managed-settings.json")
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(policy, bundled) {
-		fmt.Fprintln(out, "NOT TESTED: custom Claude policy sandbox behavior; bundled workspace/secret-denial probes apply only to the embedded policy")
-		return nil
-	}
-	return claudeSandboxCheck(claude, home, out)
+	failures = append(failures, claudeBehaviorCheck(claude, home, policy, out))
+	return errors.Join(failures...)
 }
 
 // checkSandboxProfile compares the AppArmor state with what provisioning
@@ -433,7 +430,7 @@ func runClaudeSession(ctx context.Context, claude, dir, configDir, command strin
 	args = append(args, "Run the acceptance probe.")
 	stdout, stderr, err := runWith(ctx, dir, claudeEnvironment(stub.url(), configDir), args...)
 	if err != nil {
-		return claudeRun{}, fmt.Errorf("claude session: %w: %s%s", err, stderr, stdout)
+		return claudeRun{results: stub.toolResults()}, fmt.Errorf("claude session: %w: %s%s", err, stderr, stdout)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	var result struct {
@@ -447,88 +444,6 @@ func runClaudeSession(ctx context.Context, claude, dir, configDir, command strin
 
 func quoteArg(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-// claudeSandboxCheck exercises the embedded policy with synthetic fixtures,
-// then repeats the run with a lower-scope allowRead override that the managed
-// lock must ignore, the counterpart of Codex rejecting a conflicting profile.
-func claudeSandboxCheck(claude, home string, out io.Writer) error {
-	canary := filepath.Join(home, ".pgpass")
-	if _, err := os.Lstat(canary); err == nil {
-		return errors.New("Cannot run canary test: ~/.pgpass already exists; no secrets were read")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	fixture, err := os.MkdirTemp(filepath.Join(home, "projects"), "verify-claude-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(fixture)
-	work, sibling, config := filepath.Join(fixture, "workspace"), filepath.Join(fixture, "outside-workspace"), filepath.Join(fixture, "config")
-	for _, dir := range []string{work, config} {
-		if err := os.Mkdir(dir, 0700); err != nil {
-			return err
-		}
-	}
-	if err := os.WriteFile(sibling, []byte("original"), 0600); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(canary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(canary)
-	_, err = file.WriteString(canaryText)
-	closeErr := file.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	data, err := os.ReadFile(canary)
-	if err != nil {
-		return err
-	}
-	if string(data) != canaryText {
-		return errors.New("Canary unavailable outside sandbox")
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	command := quoteArg(exe) + " claude-probe " + quoteArg(canary) + " " + quoteArg(sibling)
-	for _, override := range []bool{false, true} {
-		var extra []string
-		if override {
-			extra = []string{"--settings", `{"sandbox":{"filesystem":{"allowRead":["~/.pgpass"]}}}`}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		run, err := runClaudeSession(ctx, claude, work, config, command, extra...)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("Claude sandbox probe failed: %w", err)
-		}
-		if err := checkProbeRun(run, override); err != nil {
-			return err
-		}
-		if !override {
-			for _, line := range strings.Split(strings.Join(run.results, "\n"), "\n") {
-				if strings.HasPrefix(line, "PASS ") {
-					fmt.Fprintln(out, line)
-				}
-			}
-		}
-	}
-	data, err = os.ReadFile(sibling)
-	if err != nil {
-		return err
-	}
-	if string(data) != "original" {
-		return errors.New("Outside-workspace file changed")
-	}
-	fmt.Fprintln(out, "PASS managed read denial holds against a lower-scope allowRead override")
-	return nil
 }
 
 // nativeClaudeCheck exercises the account's Claude Code with explicit sandbox

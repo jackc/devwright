@@ -602,11 +602,22 @@ administrative access and should leave managed policy files to this mechanism.
 Verification always checks Linux isolation, policy ownership and checksum, and
 Codex's strict config loading. It compares the selected managed default, allowed
 profiles, and feature requirements with the app-server response and checks
-resolved feature enforcement. The embedded policy additionally gets the existing
-workspace-write and secret-read-denial sandbox probes. Custom policies report
-those behavior probes as **not tested**: arbitrary filesystem/network policies
-need their own acceptance tests. Successful verification does not certify a
-custom policy as equivalent to the embedded restrictions.
+resolved feature enforcement. Embedded and custom policies both get behavioral
+probes using the selected default profile: workspace writes, outside-workspace
+writes, synthetic `~/.pgpass` reads, and a lower-scope read override. Reports
+separate observed access (**allowed** or **denied**) from assessment: **matches
+policy**, **contradicts policy**, or **expectation unknown**. Formatting changes
+do not disable tests. Complex filesystem rules whose expectations cannot be
+inferred still get measured; these observations are not a certification of the
+policy. These probes do not measure network access.
+
+Independent behavioral checks continue after a mismatch or execution error,
+including the other agent's checks. Verification returns a nonzero exit status
+for known policy mismatches and probes that fail to execute. Intentional access,
+unknown expectations, and safe skips do not themselves fail verification. An
+existing `~/.pgpass` is never read or overwritten: only its read and override
+probes are skipped, while workspace probes still run. Prerequisite failures
+such as unsafe ownership or a policy checksum mismatch can stop dependent tests.
 
 ### Custom Claude Code policy and defaults
 
@@ -652,17 +663,19 @@ Verification checks that `claude` resolves to the root-owned package, the
 policy checksum, the absence of `managed-settings.d` drop-ins and
 `managed-mcp.json`, the bubblewrap AppArmor state described below, and that
 `claude sandbox status` reports the sandbox on, strict, and set by policy, when
-the installed release prints that report. For the embedded policy it then
-drives one non-interactive session through a loopback stub of the Messages API:
+the installed release prints that report. For embedded and custom policies it
+then drives non-interactive sessions through a loopback stub of the Messages API:
 the stub asks Claude Code to run the verifier's probe through the Bash tool, so
 the real sandbox applies without a model or sign-in. Each session gets a minimal
 environment, so proxy settings, provider selectors, and credentials exported in
 `credentials.sh` or dotfiles cannot redirect it away from the stub. The probe
-checks a workspace write, an outside-workspace write denial, and a synthetic
-`~/.pgpass` read denial, then repeats with a lower-scope `allowRead` override
-that the managed lock must ignore. Only the probe's own report is treated as a
-policy failure; a session that never ran it is reported as such. Custom policies
-report the behavior probe as **not tested**.
+reports workspace write, outside-workspace write, and synthetic `~/.pgpass`
+read access, then repeats with a lower-scope `allowRead` override. When the
+managed policy requires the read denial to hold against overrides, a readable
+canary is a failure. Otherwise the override's observed behavior is reported
+without assuming it must be denied. A session that never ran the probe is an
+execution error. The tests exercise the selected managed policy without adding
+sandbox restrictions to make the probe pass.
 
 ### Optional dotfiles
 

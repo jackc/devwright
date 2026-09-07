@@ -253,7 +253,7 @@ func TestClaudeHelper(t *testing.T) {
 		}
 	}
 	response.Body.Close()
-	if command == "" || !strings.Contains(command, " claude-probe ") {
+	if command == "" || (!strings.Contains(command, " claude-probe ") && !strings.Contains(command, " access-probe ")) {
 		os.Stderr.WriteString("no probe command in first turn\n")
 		os.Exit(2)
 	}
@@ -271,6 +271,23 @@ func TestClaudeHelper(t *testing.T) {
 		text = "Error: sandbox failed to start\nExit code 1"
 	case mode == "sibling-changed":
 		os.WriteFile(parts[len(parts)-1], []byte("changed"), 0600)
+	}
+	if strings.Contains(command, " access-probe ") && mode != "no-probe" {
+		got := observation{Workspace: "allowed", Outside: "denied", Secret: "denied"}
+		if mode == "permissive" {
+			got.Outside, got.Secret = "allowed", "allowed"
+		}
+		if mode == "override-accepted" && override {
+			got.Secret = "allowed"
+		}
+		if mode == "probe-failure" && !override {
+			got.Workspace = "denied"
+		}
+		if strings.Contains(command, " access-probe '-' ") {
+			got.Secret = "skipped"
+		}
+		data, _ := json.Marshal(got)
+		text = observationPrefix + string(data)
 	}
 	body, _ := json.Marshal(map[string]any{"model": "stub-model", "stream": true, "messages": []any{
 		map[string]any{"role": "user", "content": "probe"},
@@ -338,43 +355,6 @@ func TestClaudeSessionThroughStub(t *testing.T) {
 	}
 	if run.subtype != "success" || len(run.results) != 1 || !strings.HasPrefix(run.results[0], "PASS Claude Code") {
 		t.Fatalf("%+v", run)
-	}
-}
-
-func TestClaudeSandboxFixturesCleanedOnSuccessAndFailure(t *testing.T) {
-	requireLoopback(t)
-	for mode, want := range map[string]string{"success": "", "probe-failure": "enforcement failed", "override-accepted": "lower-scope allowRead override", "sibling-changed": "Outside-workspace file changed", "no-probe": "did not run to completion"} {
-		t.Run(mode, func(t *testing.T) {
-			home := t.TempDir()
-			if err := os.Mkdir(filepath.Join(home, "projects"), 0700); err != nil {
-				t.Fatal(err)
-			}
-			claude := fakeClaude(t, mode)
-			var out bytes.Buffer
-			err := claudeSandboxCheck(claude, home, &out)
-			if (err == nil) != (mode == "success") {
-				t.Fatalf("mode %s: %v", mode, err)
-			}
-			if err != nil && !strings.Contains(err.Error(), want) {
-				t.Fatalf("mode %s diagnosed as %q, want %q", mode, err, want)
-			}
-			if mode == "success" && !strings.Contains(out.String(), "PASS managed read denial holds") {
-				t.Fatalf("output: %s", out.String())
-			}
-			if _, err := os.Lstat(filepath.Join(home, ".pgpass")); !os.IsNotExist(err) {
-				t.Fatalf("canary left behind: %v", err)
-			}
-			entries, err := os.ReadDir(filepath.Join(home, "projects"))
-			if err != nil || len(entries) != 0 {
-				t.Fatalf("fixture left behind: %v %v", entries, err)
-			}
-		})
-	}
-	home := t.TempDir()
-	os.Mkdir(filepath.Join(home, "projects"), 0700)
-	os.WriteFile(filepath.Join(home, ".pgpass"), []byte("existing synthetic content"), 0600)
-	if err := claudeSandboxCheck(fakeClaude(t, "success"), home, io.Discard); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("existing canary: %v", err)
 	}
 }
 
