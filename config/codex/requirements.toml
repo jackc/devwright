@@ -7,16 +7,20 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
 vm_dev = true
 
 [permissions.vm_dev]
-description = "Shared development account: home and workspace writes with direct network access"
+description = "Shared development account: home writes with direct network access"
 
 # The VM and Unix account are the security boundary. Do not inherit :workspace:
 # its read-only Git metadata prevents commits and linked-worktree maintenance.
 [permissions.vm_dev.filesystem]
 ":root" = "read"
 "~/" = "write"
-":workspace_roots" = "write"
+# Codex stores its linked worktrees here. Explicitly reopen this metadata path.
+"~/.codex" = "write"
 ":tmpdir" = "write"
 ":slash_tmp" = "write"
+# Do not add :workspace_roots: Codex 0.153.4 injects a read-only mount for each
+# linked worktree's resolved gitdir when that worktree is a writable root.
+# The enclosing home grant already covers repositories and their worktrees.
 
 [permissions.vm_dev.network]
 enabled = true

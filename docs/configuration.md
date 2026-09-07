@@ -174,7 +174,8 @@ are idle because it updates installed software and reloads SSH configuration.
 ## Custom Codex policy and defaults
 
 The embedded `vm_dev` profile permits writes throughout the development user's
-home, active workspaces, and temporary directories, with read access elsewhere.
+home and temporary directories, with read access elsewhere. Keep repositories
+and worktrees under that home; external workspace paths require a custom policy.
 It intentionally does not inherit Codex's `:workspace` profile, whose read-only
 Git metadata can block commits and linked-worktree cleanup. Repositories and
 worktrees under the home directory can share Git metadata and merge changes
@@ -182,6 +183,10 @@ without widening permissions for each task. This also permits changes to shell
 startup files and agent configuration in that home. The VM and Unix account
 permissions are the primary boundary; managed secret-path denials remain an
 additional safeguard. This profile does not grant sudo or override OS permissions.
+It grants access through the enclosing home rather than `:workspace_roots`:
+Codex 0.153.4 otherwise adds a read-only mount for a linked worktree's resolved
+Git directory even with a writable `.git` rule. An explicit `~/.codex` grant
+allows worktrees stored by the app there; the sign-in file remains denied.
 
 The executable includes default Codex files. Supply explicit host file paths to
 replace either complete file; settings are not merged and project directories
@@ -370,7 +375,7 @@ Create fresh VMs for the Ubuntu 26.04 recipe with `dev` as the primary user.
   port forwarding, and bundled containerd. Use explicit SSH tunnels for previews,
   for example `ssh -N -L 3000:127.0.0.1:3000 lima-dev`.
 * Linux protects `/root` from `dev`; the embedded managed Codex policy additionally
-  denies common sensitive paths, permits home and workspace writes and direct networking,
+  denies common sensitive paths, permits home writes and direct networking,
   and disables apps, plugins, browser/computer use and configured MCP servers.
   The embedded managed Claude Code policy does the same for Claude Code's Bash
   sandbox and file tools. Only Bash is sandboxed there: WebFetch and WebSearch
