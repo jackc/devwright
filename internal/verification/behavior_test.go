@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"devwright/internal/codexpolicy"
+	"github.com/jackc/devwright/internal/codexpolicy"
 )
 
 func TestBehaviorExpectations(t *testing.T) {

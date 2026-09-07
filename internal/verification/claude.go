@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"devwright/internal/claudepolicy"
+	"github.com/jackc/devwright/internal/claudepolicy"
 	"encoding/json"
 	"errors"
 	"fmt"

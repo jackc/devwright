@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"devwright/internal/codexpolicy"
+	"github.com/jackc/devwright/internal/codexpolicy"
 	"github.com/pelletier/go-toml/v2"
 )
 

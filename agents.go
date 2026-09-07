@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"devwright/internal/claudepolicy"
-	"devwright/internal/codexpolicy"
+	"github.com/jackc/devwright/internal/claudepolicy"
+	"github.com/jackc/devwright/internal/codexpolicy"
 	"github.com/pelletier/go-toml/v2"
 )
 

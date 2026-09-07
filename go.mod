@@ -1,4 +1,4 @@
-module devwright
+module github.com/jackc/devwright
 
 go 1.25.0
 

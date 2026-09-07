@@ -1,7 +1,7 @@
 package verification
 
 import (
-	"devwright/internal/userpolicy"
+	"github.com/jackc/devwright/internal/userpolicy"
 	"errors"
 	"fmt"
 	"io"

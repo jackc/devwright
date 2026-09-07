@@ -2,7 +2,7 @@
 package main
 
 import (
-	"devwright/internal/verification"
+	"github.com/jackc/devwright/internal/verification"
 	"fmt"
 	"io"
 	"os"

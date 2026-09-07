@@ -3,7 +3,7 @@ package verification
 import (
 	"bytes"
 	"context"
-	"devwright/internal/codexpolicy"
+	"github.com/jackc/devwright/internal/codexpolicy"
 	"encoding/json"
 	"errors"
 	"io"

@@ -1,7 +1,7 @@
 package devwright
 
 import (
-	"devwright/internal/userpolicy"
+	"github.com/jackc/devwright/internal/userpolicy"
 	"encoding/json"
 	"errors"
 	"fmt"

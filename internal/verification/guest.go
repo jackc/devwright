@@ -2,7 +2,7 @@ package verification
 
 import (
 	"crypto/sha256"
-	"devwright/internal/codexpolicy"
+	"github.com/jackc/devwright/internal/codexpolicy"
 	"errors"
 	"fmt"
 	"io"
