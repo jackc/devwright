@@ -127,6 +127,24 @@ func checkManagedDrift(dir string) error {
 	return nil
 }
 
+// Preserved or subsequently edited user settings must still be valid. The
+// separate sandbox probe uses explicit settings and cannot detect a user file
+// Claude silently discarded.
+func checkClaudeUserSettings(home string) error {
+	path := filepath.Join(home, ".claude", "settings.json")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := claudepolicy.Validate(data); err != nil {
+		return fmt.Errorf("invalid Claude Code user settings %s: %w", path, err)
+	}
+	return nil
+}
+
 func checkClaude(home string, out io.Writer) error {
 	claude, err := exec.LookPath("claude")
 	if err != nil {
@@ -147,6 +165,9 @@ func checkClaude(home string, out io.Writer) error {
 		return fmt.Errorf("Claude Code %s is older than the %d.%d.%d policy floor", strings.TrimSpace(stdout), minimumClaudeVersion[0], minimumClaudeVersion[1], minimumClaudeVersion[2])
 	}
 	fmt.Fprintf(out, "Claude Code installed: %s\n", strings.TrimSpace(stdout))
+	if err := checkClaudeUserSettings(home); err != nil {
+		return err
+	}
 	expected, err := os.ReadFile("/usr/local/share/dev-sandbox/managed-settings.sha256")
 	if err != nil {
 		return err

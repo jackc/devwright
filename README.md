@@ -609,6 +609,14 @@ above every user, project, local, and `--settings` value; the initial personal
 settings go to `/home/dev/.claude/settings.json`. Both are strict JSON objects
 without comments.
 
+User settings supplied with `--claude-config` are validated against a bundled
+copy of the published Claude Code settings schema before provisioning. Guest
+and native-user verification also validate the installed user file, including
+preserved settings. This catches malformed network, model, environment, and
+hook settings that would make Claude silently discard the entire file.
+Validation works offline; settings added by newer Claude releases may require
+updating the [schema snapshot](internal/claudepolicy/schema/README.md).
+
 ```sh
 dev-sandbox create my-dev \
   --claude-managed-settings ./managed-settings.json \
@@ -764,7 +772,7 @@ The host CLI uses `go-toml/v2` to parse custom configuration; the Linux verifier
 uses `golang.org/x/sys` for filesystem access checks. Versions and checksums are
 recorded in `go.mod` and `go.sum`. The build toolchain is pinned in `mise.toml`,
 which local development and GitHub Actions both use; `go.mod` records the minimum
-supported Go version. Builds use Bash and gzip; tests use Go, Git, Bash, and
+supported Go version. Builds use Bash and gzip; tests use Go, Git, Bash, Python 3, and
 OpenSSH with synthetic data and temporary directories.
 
 `python3 tests/claude-sandbox-lab.py` exercises Claude Code's real Bash sandbox

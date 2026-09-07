@@ -95,6 +95,38 @@ func TestManagedDrift(t *testing.T) {
 	}
 }
 
+func TestClaudeUserSettings(t *testing.T) {
+	home := t.TempDir()
+	if err := checkClaudeUserSettings(home); err != nil {
+		t.Fatalf("absent optional settings: %v", err)
+	}
+	path := filepath.Join(home, ".claude", "settings.json")
+	if err := os.Mkdir(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		data string
+		ok   bool
+	}{
+		{`{"sandbox":{"enabled":true,"network":{"allowedDomains":["*"]}}}`, true},
+		{`{"sandbox":{"enabled":false}}`, true},
+		{`{"sandbox":{"enabled":true,"network":{"allowedDomains":"*"}}}`, false},
+		{`{"model":42}`, false},
+	} {
+		if err := os.WriteFile(path, []byte(tc.data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		err := checkClaudeUserSettings(home)
+		if (err == nil) != tc.ok || (err != nil && !strings.Contains(err.Error(), path)) {
+			t.Fatalf("settings %s: %v", tc.data, err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != tc.data {
+			t.Fatalf("verification changed the settings: %s %v", data, err)
+		}
+	}
+}
+
 func post(t *testing.T, url, body string) string {
 	t.Helper()
 	response, err := http.Post(url, "application/json", strings.NewReader(body))
@@ -181,7 +213,12 @@ func TestClaudeHelper(t *testing.T) {
 		}
 	}
 	cwd, err := os.Getwd()
-	if err != nil || filepath.Base(cwd) != "workspace" || os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Join(filepath.Dir(cwd), "config") {
+	// The config directory may not exist yet. Resolve its parent so macOS's
+	// /var and /private/var spellings compare as the same fixture directory.
+	config := os.Getenv("CLAUDE_CONFIG_DIR")
+	configParent, configErr := filepath.EvalSymlinks(filepath.Dir(config))
+	workParent, workErr := filepath.EvalSymlinks(filepath.Dir(cwd))
+	if err != nil || configErr != nil || workErr != nil || filepath.Base(cwd) != "workspace" || filepath.Base(config) != "config" || configParent != workParent {
 		os.Stderr.WriteString("unexpected working directory or config dir\n")
 		os.Exit(2)
 	}
@@ -287,7 +324,12 @@ func TestClaudeSessionThroughStub(t *testing.T) {
 	claude := fakeClaude(t, "success")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	fixture := t.TempDir()
+	// Exercise a symlinked fixture even on Linux, where TMPDIR may already
+	// be canonical. macOS's default /var/folders alias has the same behavior.
+	fixture := filepath.Join(t.TempDir(), "fixture-link")
+	if err := os.Symlink(t.TempDir(), fixture); err != nil {
+		t.Fatal(err)
+	}
 	work := filepath.Join(fixture, "workspace")
 	os.Mkdir(work, 0700)
 	run, err := runClaudeSession(ctx, claude, work, filepath.Join(fixture, "config"), "'/x/verify' claude-probe '/x/canary' '/x/sibling'")

@@ -25,6 +25,9 @@ module_dir=$(go list -m -f '{{.Dir}}' golang.org/x/sys)
 cp "$module_dir/LICENSE" "$staging/licenses/golang-x-sys.txt"
 module_dir=$("${GO:-go}" list -m -f '{{.Dir}}' github.com/pelletier/go-toml/v2)
 cp "$module_dir/LICENSE" "$staging/licenses/go-toml.txt"
+module_dir=$("${GO:-go}" list -m -f '{{.Dir}}' github.com/google/jsonschema-go)
+cp "$module_dir/LICENSE" "$staging/licenses/jsonschema-go.txt"
+cp internal/claudepolicy/schema/LICENSE "$staging/licenses/claude-settings-schema.txt"
 for platform in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
   goos=${platform%_*}
   arch=${platform#*_}

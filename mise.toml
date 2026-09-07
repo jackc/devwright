@@ -28,6 +28,7 @@ description = "Run tests, build, Go vet, and Bash syntax checks"
 depends = ["test", "build"]
 run = [
   '"${GO:-go}" vet ./...',
+  'python3 -m unittest discover -s tests -p "test_*.py"',
   'for script in lima/bootstrap.sh lima/provision.sh lima/dotfiles.sh lima/credentials.sh incus/bootstrap.sh scripts/build-guest.sh scripts/release.sh tests/environment-linux.sh tests/users-linux.sh tests/users-linux-vm.sh tests/users-macos.sh; do bash -n "$script" || exit; done',
 ]
 

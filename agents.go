@@ -54,10 +54,10 @@ func checkCodexRequirements(data []byte) error {
 	return nil
 }
 
-// Claude Code rejects a user settings file as a whole when a value has the
-// wrong type, so the dev defaults get the same typed check as the policy.
+// Claude Code drops an invalid user settings file as a whole. Validate all
+// published settings, not just the managed keys that the verifier compares.
 func checkClaudeSettings(data []byte) error {
-	if _, err := claudepolicy.Parse(data); err != nil {
+	if err := claudepolicy.Validate(data); err != nil {
 		return fmt.Errorf("invalid Claude Code settings: %w", err)
 	}
 	return nil

@@ -86,6 +86,22 @@ func TestClaudeInputValidation(t *testing.T) {
 	if err := o.loadAgentFiles(); err != nil {
 		t.Fatal(err)
 	}
+	// These keys are outside the managed posture struct, but a bad value makes
+	// Claude discard the whole user file, including sandbox.enabled.
+	for _, data := range []string{
+		`{"sandbox":{"enabled":true,"network":{"allowedDomains":"*"}}}`,
+		`{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":"yes"}}`,
+		`{"sandbox":{"enabled":true},"model":42}`,
+		`{"sandbox":{"enabled":true},"env":{"EXAMPLE":false}}`,
+	} {
+		os.WriteFile(path, []byte(data), 0600)
+		if err := o.loadAgentFiles(); err == nil {
+			t.Fatalf("accepted invalid user settings %s", data)
+		}
+	}
+	if err := checkClaudeSettings([]byte(nativeClaudeSettings)); err != nil {
+		t.Fatalf("native defaults: %v", err)
+	}
 }
 
 // provisionSection runs one agent's file-installation section of the rendered

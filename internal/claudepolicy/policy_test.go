@@ -39,3 +39,42 @@ func TestInvalidPolicies(t *testing.T) {
 		t.Fatalf("relaxed policy: %+v", s.Sandbox)
 	}
 }
+
+func TestValidateUserSettings(t *testing.T) {
+	for _, path := range []string{"../../config/claude/settings.json", "../../config/claude/managed-settings.json"} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := Validate(data); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+	}
+	for _, data := range []string{
+		`{}`, `{"sandbox":{"enabled":false}}`,
+		`{"model":"personal","env":{"EXAMPLE":"value"},"sandbox":{"network":{"allowedDomains":["*"]}}}`,
+		`{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo check"}]}]}}`,
+		// The published schema permits extension keys at the top level. An
+		// instance's $schema is data, never a URL to fetch during validation.
+		`{"$schema":"https://invalid.example/settings.json","futureSetting":true}`,
+	} {
+		if err := Validate([]byte(data)); err != nil {
+			t.Errorf("rejected %s: %v", data, err)
+		}
+	}
+	for _, data := range []string{
+		``, `null`, `[]`, `{broken`,
+		`{"sandbox":{"enabled":null}}`,
+		`{"sandbox":{"network":{"allowedDomains":"*"}}}`,
+		`{"sandbox":{"network":{"allowedDomains":[null]}}}`,
+		`{"sandbox":{"network":{"httpProxyPort":"8080"}}}`,
+		`{"sandbox":{"autoAllowBashIfSandboxed":"yes"}}`,
+		`{"sandbox":{"filesystem":{"allowWrite":"/tmp"}}}`,
+		`{"model":42}`, `{"env":{"EXAMPLE":false}}`,
+		`{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":42}]}]}}`,
+	} {
+		if err := Validate([]byte(data)); err == nil {
+			t.Errorf("accepted %s", data)
+		}
+	}
+}

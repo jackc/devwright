@@ -33,7 +33,13 @@ MARKER = ".claude-sandbox-lab"
 PROBE = r"""#!/bin/sh
 echo "PROBE write-cwd: $(touch ./workspace-write-ok 2>/dev/null && echo ok || echo DENIED)"
 echo "PROBE write-sibling: $(sh -c "echo changed > \"$SIBLING\"" 2>/dev/null && echo ALLOWED || echo denied)"
-echo "PROBE read-canary: $(head -c1 "$CANARY" >/dev/null 2>&1 && echo READABLE || echo denied)"
+# Linux masks denied files with /dev/null, so a successful empty read is safe.
+canary_content=$(cat "$CANARY" 2>/dev/null)
+if [ "$canary_content" = dev-sandbox-synthetic-canary ]; then
+  echo 'PROBE read-canary: READABLE'
+else
+  echo 'PROBE read-canary: denied'
+fi
 echo "PROBE read-system: $(head -c1 /etc/hosts >/dev/null 2>&1 && echo readable || echo DENIED)"
 echo "PROBE net-example: $(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://example.com 2>/dev/null || echo blocked)"
 """

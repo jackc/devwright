@@ -272,6 +272,9 @@ func CheckNative(account, home string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintln(out, strings.TrimSpace(version))
+	if err := checkClaudeUserSettings(home); err != nil {
+		return err
+	}
 	if err := nativeClaudeCheck(claude, home, exe, out); err != nil {
 		return err
 	}
