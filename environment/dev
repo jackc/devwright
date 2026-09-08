@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+python="$directory/../.build/ansible/bin/python"
+if [ ! -x "$python" ]; then
+  echo 'Install first: python3 -m venv .build/ansible && .build/ansible/bin/pip install -r environment/requirements.txt' >&2
+  exit 1
+fi
+exec "$python" "$directory/launcher.py" "$@"

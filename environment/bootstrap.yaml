@@ -1,0 +1,16 @@
+- name: Establish root administration from Lima's initial account
+  hosts: development
+  remote_user: dev
+  gather_facts: false
+  tasks:
+    - name: Establish key-only root SSH before removing bootstrap access
+      ansible.builtin.script: "{{ playbook_dir }}/../lima/bootstrap.sh"
+      args:
+        executable: /bin/bash
+      become: true
+      become_method: sudo
+
+    - name: Ensure Python is available for Ansible modules
+      ansible.builtin.raw: test -x /usr/bin/python3 || (apt-get update -qq && apt-get install -y python3)
+      become: true
+      changed_when: false

@@ -1,5 +1,9 @@
 # Devwright
 
+The [Lima + Ansible experiment](environment/README.md) provides a checked-in
+development recipe and provisioning workflow without the devwright executable.
+The documentation below describes the existing Go CLI.
+
 Devwright creates isolated development environments for humans and coding agents.
 It is a Go CLI that sets up Codex and Claude Code in Lima VMs, Incus VMs or
 containers, or restricted native accounts on Linux and macOS.
