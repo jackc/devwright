@@ -1,20 +1,20 @@
-# Host-side recipe inputs. Paths are relative to this file. Never put secrets here.
-# Additional apt packages and environment variables are project-specific.
+# Creation recipe. Paths are relative to this file. Never put secrets here.
+# Significant changes are applied by creating a new VM, not reconfiguring one.
 packages: []
 environment: {}
 dotfiles_repo: ""
 dotfiles_install: install
 
-# Omitted managed policies preserve the last selection, or use bundled defaults.
+# Optional initial policy and personal settings; empty means bundled defaults.
 codex_requirements: ""
 codex_config: ""
 claude_managed_settings: ""
 claude_config: ""
-reset_codex_requirements: false
-reset_claude_managed_settings: false
-replace_codex_config: false
-replace_claude_config: false
 
-# Prompt only for missing variables after provisioning. Values remain in the VM.
-# Example: [{name: GH_TOKEN, description: "GitHub token scoped to this project's repositories"}]
+# Optional Bash scripts executed inside the guest after base setup.
+system_script: ""
+user_script: ""
+
+# Prompt after provisioning; values never become part of the saved Lima recipe.
+# Example: [{name: GH_TOKEN, description: "Token scoped to this project's repositories"}]
 credentials: []

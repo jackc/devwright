@@ -1,7 +1,8 @@
 # Devwright
 
-The [Lima + Ansible experiment](environment/README.md) provides a checked-in
-development recipe and provisioning workflow without the devwright executable.
+The [Lima recipe experiment](environment/README.md) provides a checked-in
+development recipe using native Lima provisioning, Bash, and a standard-library
+Ruby launcher. Significant setup changes create a new VM; Ansible is not required.
 The documentation below describes the existing Go CLI.
 
 Devwright creates isolated development environments for humans and coding agents.

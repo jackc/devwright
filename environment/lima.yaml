@@ -1,5 +1,5 @@
-# VM layer of the Lima + Ansible direction. Guest provisioning is separate.
-# This creates a bootstrap machine; dev retains sudo until Ansible revokes it.
+# Base VM configuration. environment/dev adds the saved system provisioning script.
+# Use environment/dev create to get a fully configured development environment.
 minimumLimaVersion: "2.2.0"
 base:
   - template:_images/ubuntu-26.04
@@ -22,7 +22,7 @@ ssh:
 propagateProxyEnv: false
 
 # Lima creates the initial SSH account and supplies its own public login key.
-# Ansible must establish and verify root SSH before removing dev's sudo access.
+# The system provisioner installs root's public login keys and removes dev's sudo.
 user:
   name: dev
   comment: Shared development account
@@ -31,5 +31,5 @@ user:
   shell: /bin/bash
   passwordlessSudo: true
 
-# No guest setup on boot. Ansible will own explicit configuration runs.
+# The launcher fills this with provision.sh and the selected creation recipe.
 provision: []

@@ -1,2 +1,0 @@
-ansible-core>=2.19,<2.20
-jsonschema>=4.23,<5

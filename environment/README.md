@@ -1,111 +1,145 @@
-# Lima + Ansible development environment
+# Lima development recipes
 
-This experiment replaces the devwright provisioning executable with Lima,
-Ansible, and a checked-in recipe. It creates the same Ubuntu 26.04 environment:
-non-sudo `dev`, separate key-only root SSH, current Codex and Claude Code,
-managed agent policies, optional dotfiles, private credentials, and the existing
-acceptance verifier. It currently supports **Lima Linux VMs only**.
+Create a complete Ubuntu development VM from a checked-in recipe. **Significant
+configuration changes mean creating a new VM.** There is no Ansible, Python
+launcher, virtual environment, or configuration-in-place command.
 
-## Install host dependencies
+Host tooling uses Ruby's standard library, Lima 2.2+, OpenSSH, and Git when
+installing dotfiles. Guest provisioning uses Bash and ordinary Ubuntu utilities.
+The macOS system Ruby 2.6 is supported; a separate Ruby installation is unnecessary.
+Ubuntu's own cloud-init implementation may use Python internally, but our tooling
+does not require a Python installation or any Python packages on the host.
 
-Install Lima 2.2+ and Python 3.11+ (for example `brew install lima python`). From
-this repository, create a local Ansible environment and build the verifiers:
+## Getting started
+
+Install Lima (`brew install lima` on macOS). Linux hosts also need Ruby. From
+this checkout, build the shared acceptance-verifier artifacts once:
 
 ```sh
-python3 -m venv .build/ansible
-.build/ansible/bin/pip install -r environment/requirements.txt
+mise install
 mise run guest
 ```
 
-The last command uses the repository's Go toolchain. Go is needed to build the
-shared acceptance verifier, not to run the launcher or provision the machine.
-There is no dependency on the devwright CLI or any external Ansible collection.
-Run `mise install` first if the repository's toolchain is not installed.
+That build uses Go. Neither a Go compiler nor the devwright executable is needed
+at runtime when the prebuilt `guestbin/verify-linux-{arm64,amd64}.gz` files are
+already present. No Ruby gems are required.
 
-## Create and configure
-
-Choose a fresh instance name; creation refuses existing names:
+Edit `environment/config.yaml`, or copy it to a project-specific recipe:
 
 ```sh
-environment/dev create my-dev
+environment/dev create my-dev --config ./project-environment.yaml
 ssh lima-my-dev
 ```
 
-Creation validates the effective Lima configuration, boots the VM, establishes
-root administration, runs Ansible, verifies through a real dev SSH session,
-installs the host SSH alias, and prompts for missing declared credentials.
+Defaults are 4 CPUs, 4 GiB RAM, and a 60 GiB disk. Override them at creation with
+`--cpus 8 --memory 8 --disk 100`, or edit `environment/lima.yaml`.
 
-The recipe is `environment/config.yaml`. To use a project-specific recipe, copy
-it to another file and edit it, then supply it on every configuration run:
+Creation renders the recipe into a native Lima `mode: system` provisioner,
+creates a fresh instance, checks for unexpected effective Lima overrides, starts
+it, waits for provisioning, transfers the verifier over SSH, verifies through a
+real dev SSH session, installs an SSH alias, and prompts for missing credentials.
+Existing instance names are refused, never replaced or deleted.
 
-```sh
-environment/dev create my-dev --config ./project-environment.yaml --cpus 8 --memory 8 --disk 100
-environment/dev configure my-dev --config ./project-environment.yaml
-environment/dev verify my-dev
-```
+The VM retains the current devwright setup: Ubuntu 26.04, non-sudo `dev`, separate
+key-only root administration, current Codex and Claude Code, managed policies,
+AppArmor compatibility, optional dotfiles, private credentials, and projects.
+There are no host mounts, host SSH agent forwarding, or automatic application
+port forwarding. Guest outbound networking remains available. Use SSH tunnels
+for application ports.
 
-Memory and disk CLI values are in GiB. `configure` starts a stopped VM, reapplies
-the recipe, updates the agents, and verifies it. Run configuration while development
-tools are idle. `verify` checks a running VM without installing or updating tools.
-A failed configuration can be retried with `configure`, including a run interrupted
-after bootstrap access was revoked. Failed VMs are left intact for diagnosis.
+## Creation recipe
 
-The launcher uses plain Lima commands for lifecycle. No setup runs on reboot:
-
-```sh
-limactl stop my-dev
-limactl start my-dev
-ssh root@lima-my-dev
-```
-
-Ansible owns the guest account and service configuration. Edit the task files to
-add services or other system setup; add ordinary apt packages and non-secret
-variables in the recipe:
+`config.yaml` contains package names, non-secret environment variables, optional
+policy/config paths, dotfiles settings, project scripts, and credential declarations:
 
 ```yaml
 packages: [postgresql, libpq-dev]
 environment:
   APP_ENV: development
-  PGHOST: localhost
+
+dotfiles_repo: https://github.com/OWNER/dotfiles.git
+dotfiles_install: install
+
+system_script: setup/system.sh
+user_script: setup/user.sh
+
+credentials:
+  - name: GH_TOKEN
+    description: GitHub token scoped to this project's repositories
 ```
 
-Package versions are unpinned. Configuration installs current listed apt packages
-and current agent releases; it does not promise identical versions or configure
-a new system-wide automatic-update policy. Existing projects, credentials, and
-personal agent settings are preserved unless replacement is explicitly requested.
+Paths are relative to the recipe file. Both scripts are optional Bash scripts:
+`system_script` runs as root after the base setup; `user_script` runs as dev with
+the declared non-secret environment. The user script starts from a minimal
+environment; the system script inherits the root provisioning environment.
+Both run inside the VM, not on the host. Extra packages install before dotfiles.
+Scripts should tolerate a retry after partial failure. No credential values are
+available to provisioning by default; interactive onboarding follows setup.
+
+Optional `codex_requirements`, `codex_config`, `claude_managed_settings`, and
+`claude_config` paths select initial policies and personal settings. Empty paths
+use this repository's defaults. JSON files are checked for valid objects and Bash
+scripts for syntax on the host; policy schemas and TOML are checked by the guest
+verifier after installation. There are no reset/replace options for existing VMs.
+
+For dotfiles, the host fetches the repository's default branch using normal Git
+authentication and bundles committed history into the saved creation recipe.
+Independent root/dev checkouts run their own installer. Host Git configuration,
+credentials, and agent sockets are not transferred. Submodule and Git LFS contents
+are not bundled. Only select dotfiles and scripts you trust to run as root.
+
+## What happens on restart
+
+Lima calls system provisioners on every boot. Our provisioner checks the root-owned
+`/usr/local/share/devwright/lima-setup-complete` marker and immediately exits when
+setup has already succeeded. Successful restarts do not reinstall packages,
+update agents, overwrite configuration, or rerun project scripts.
+
+The instance stores a snapshot of the recipe's scripts, configuration, and dotfiles.
+Editing the original source files does not change it. Apt versions remain unpinned;
+there is no claim of identical package versions across new VMs, and this recipe
+does not add a new automatic-update policy.
+
+```sh
+limactl stop my-dev
+limactl start my-dev
+environment/dev verify my-dev
+```
+
+For a significant change, edit the recipe and create another VM with a new name:
+
+```sh
+environment/dev create my-dev-v2 --config ./project-environment.yaml
+```
+
+Bring over the projects or data you need explicitly. Creation does not migrate
+uncommitted files, databases, credentials, or account sign-ins. Keep the old VM
+until you have verified the replacement and transferred needed data.
 
 ## Credentials and sign-in
 
-Declare required values in the recipe, never the actual secrets:
-
-```yaml
-credentials:
-  - name: GH_TOKEN
-    description: GitHub token scoped to this environment's repositories
-```
-
-After successful provisioning, the launcher checks only which declared variables
-are nonempty in a fresh dev SSH environment and prompts for missing values with
-hidden input. It sends values to the guest over SSH stdin, without putting them
-in Lima configuration, host files, command arguments, or Ansible output.
-Values go into dev's mode-0600 `~/.config/devwright/credentials.sh`. All processes
-running as dev can read them; root retains normal administrative access.
-Noninteractive runs with missing required credentials fail with the variable name;
-the configured VM remains available to finish onboarding interactively.
+The saved recipe records credential **names and descriptions**, never values.
+After setup, hidden prompts collect missing values and transfer them over SSH
+stdin. Values are stored as dev-owned mode-0600 files under
+`~/.config/devwright/credentials.d/`, in a mode-0700 directory. The existing
+`credentials.sh` shell loader sources these files after manual assignments and
+the declared non-secret environment. Each rotation replaces that variable's file.
 
 ```sh
-environment/dev credentials my-dev --config ./project-environment.yaml
-# Prompt again for all declared credentials:
-environment/dev credentials my-dev --config ./project-environment.yaml --replace
+environment/dev credentials my-dev
+# Prompt again for every declared credential:
+environment/dev credentials my-dev --replace
 ```
 
-Repeated rotation replaces the launcher's managed block for each variable.
-Pre-existing manually written assignments are preserved; the managed assignment
-at the end takes precedence. Existing processes keep old environment values, so
-reconnect shells and remote runtimes after changes. Removing a declaration does
-not revoke or delete a previously installed credential.
+These commands use the instance's saved declarations; the original recipe file is
+not needed. Existing nonempty variables are skipped unless `--replace` is passed.
+An unattended creation with missing required credentials exits unsuccessfully
+with the missing variable name, leaving the configured VM available to finish.
+No values go into host files, process arguments, or the saved Lima configuration.
+All processes running as dev can read dev's credentials, and root retains normal
+administrative access. Reconnect shells and remote runtimes after rotation.
 
-Account sign-ins remain interactive inside the guest:
+Complete agent sign-ins inside the guest as before:
 
 ```sh
 ssh lima-my-dev
@@ -113,117 +147,96 @@ codex login --device-auth
 claude  # complete /login
 ```
 
-The launcher does not import personal host credentials or automate browser logins.
-Non-secret variables are written separately to `environment.sh` and loaded through
-the credential shell hooks. Those hooks cover Bash/Zsh SSH sessions; independently
-started systemd services still need their own environment configuration.
+Bash/Zsh SSH shell hooks load the environment. Independently started services
+still need their own environment configuration. Browser login and real service
+credential authorization are not automated by the verifier.
 
-## Dotfiles and agent overrides
+## Recovery and inspection
 
-`dotfiles_repo` is optional. The host clones its default branch using normal Git
-authentication, transfers a temporary Git bundle, and runs `dotfiles_install`
-(default `install`) independently as root and dev. Only supply a repository you
-trust to run as root. Host Git configuration, credentials, and agent sockets are
-not transferred. Submodule and Git LFS contents are not bundled. Subsequent runs
-require the same repository and a fast-forward update, matching devwright.
+If first-boot provisioning fails, no completion marker is written. Fix external
+causes such as a temporary download outage and restart the VM to retry the same
+saved recipe. If the recipe itself needs changing, create a fresh VM from the
+corrected source. To inspect logs, use root SSH after bootstrap has established it:
 
-Policy/config paths are relative to the selected recipe file:
-
-```yaml
-codex_requirements: policies/requirements.toml
-claude_managed_settings: policies/managed-settings.json
-codex_config: policies/config.toml
-claude_config: policies/settings.json
+```sh
+ssh root@lima-my-dev 'tail -100 /var/log/cloud-init-output.log'
 ```
 
-A managed policy becomes the saved root-owned selection. Omitting its path on a
-later run preserves that selection; set `reset_codex_requirements: true` or
-`reset_claude_managed_settings: true` to restore the bundled defaults. Selecting
-and resetting the same policy together is rejected.
+If provisioning succeeded but verifier transfer or onboarding was interrupted:
 
-Personal config files seed absent files only. Set `replace_codex_config: true`
-or `replace_claude_config: true` together with the corresponding path to replace
-an existing personal file. Replacement is explicit and overwrites the old file.
-The launcher validates TOML/JSON and the bundled Claude user-settings schema
-before VM operations; the guest verifier checks runtime policy behavior.
+```sh
+environment/dev finish my-dev
+```
 
-## Files and responsibility boundary
+`finish` requires the completion marker, installs the verifier, verifies the VM,
+installs the alias, and finishes credential prompts. It does not reconfigure the
+VM or update development tools. `verify` only checks an already completed VM.
 
-| File | Responsibility |
+Preview the complete saved Lima recipe:
+
+```sh
+environment/dev render preview --config ./project-environment.yaml > /tmp/recipe.yaml
+limactl validate /tmp/recipe.yaml
+```
+
+Lima enforces a 4 MiB template limit. Compiled verifiers are transferred separately
+to stay within that limit. A large dotfiles history can still exceed it; keep the
+recipe small and fetch large dependencies inside guest scripts. Rendered recipes
+contain selected dotfiles source/history and configuration, so treat them as
+private when those inputs are private.
+
+The launcher checks the effective VM settings and saved provisioner checksum,
+including after template composition. SHA-256 identifies the selected script; it
+is not an authenticity guarantee against someone who can edit the host's Lima state.
+Use the launcher for creation; invoking the base `lima.yaml` directly only creates
+an unconfigured bootstrap VM. The base file deliberately has no setup payload.
+
+## Files
+
+| File | Purpose |
 | --- | --- |
-| `lima.yaml` | Image, CPU, RAM, disk, plain mode, host integration, initial account |
-| `config.yaml` | Packages, environment, dotfiles, policy selections, credential declarations |
-| `bootstrap.yaml` | Initial dev/sudo connection establishes root SSH and Python |
-| `setup.yaml`, `tasks/` | Accounts, SSH policy, apt, agents, personal setup, verifier installation |
-| `templates/policies.sh.j2` | Atomic policy selection, initial configs, legacy config migrations |
-| `files/` | Focused AppArmor, Git, and environment helpers |
-| `dev`, `launcher.py` | Effective-config checks, root handoff, Ansible invocation, SSH aliases, prompts |
-| `../config`, `../lima/{bootstrap,dotfiles,credentials}.sh`, `../guestbin` | Shared existing policies, helpers, and verifier assets |
+| `lima.yaml` | Base VM resources, OS, account, and isolation settings |
+| `config.yaml` | Project creation recipe and credential declarations |
+| `provision.sh` | First-boot completion/retry guard |
+| `setup-user.sh` | Bash environment and credential-directory loader |
+| `dev`, `launcher.rb` | Standard-library Ruby renderer, Lima/SSH orchestration, prompts |
+| `../lima/*.sh`, `../config/` | Shared existing guest setup, dotfiles, credential hooks, policies |
+| `../guestbin/verify-linux-*.gz` | Existing acceptance verifier, transferred after boot |
 
-The experiment intentionally retains the existing `/usr/local/share/devwright`
-and `~/.config/devwright` paths for verifier and configuration parity. It does
-not call the old full `lima/provision.sh` or the Go CLI. The focused shell helpers
-preserve tested migration and shell-startup behavior while Ansible modules own
-ordinary account, package, directory, repository, and file setup.
+The shared Bash recipe remains the implementation of the guest setup. The old
+Go CLI retains its original embedded-verifier behavior; this experiment disables
+only that embedded-verifier step and transfers the same artifact afterward.
+Ansible/Python implementation files were removed; checkpoint `c8cfe1b` retains
+the previous experiment for comparison. Existing Ansible-created VMs are not
+adopted by this launcher because they lack a saved native creation recipe.
 
-Lima still generates its own instance configuration, SSH connection file,
-identity, and disks outside this repository. No separate cloud-init or global
-Lima configuration is needed. Ansible connects through Lima's generated SSH
-configuration, with agent consultation/forwarding disabled and separate root/dev
-multiplexing sockets. Installed aliases live in `~/.ssh/lima-environments/` and
-the launcher backs up the main SSH configuration before adding its include.
+## Tests
 
-The template starts dev with sudo. The launcher tries root first; if unavailable,
-it bootstraps over dev/sudo, then confirms an independent root connection before
-Ansible revokes dev's sudo. Bootstrap-only VMs are not yet restricted environments.
+Validated September 8, 2026 on macOS arm64 with Lima 2.2.0, system Ruby 2.6,
+Ubuntu 26.04 arm64, Codex 0.153.4, and Claude Code 2.1.263:
 
-Plain mode preserves guest outbound networking and SSH but disables automatic
-application forwarding. Use SSH tunnels for application ports. There is no network
-allowlist. The launcher rejects unexpected effective host mounts, provisioning,
-forwarding, proxy inheritance, or primary-account settings, including host-global
-Lima overrides. Editing the source YAML does not change an existing instance.
+- Nine host tests passed with both system Ruby 2.6 and Ruby 4.0; the boot guard
+  retries failed setup and skips completed setup.
+- Default and custom fresh VMs passed the existing guest acceptance verifier.
+- Custom apt packages, policies, root/dev dotfiles, system/user scripts, literal
+  environment values, and synthetic credential rotation passed.
+- Missing-credential onboarding resumed with `finish` after installing the value.
+- Editing source recipes/scripts and restarting left the saved recipe unchanged;
+  setup ran only once, user data survived, and the installed SSH alias worked.
+- Existing Go regression tests passed after making embedded verifier installation
+  optional in the shared Bash recipe.
 
-## Validation
-
-Validated on September 8, 2026 with Lima 2.2.0 on macOS arm64, Ubuntu 26.04
-arm64 guests, Ansible Core 2.19.12, Codex 0.153.4, and Claude Code 2.1.263:
-
-- Nine host tests and both playbook syntax checks passed.
-- Fresh creation completed in one command and passed the existing guest verifier.
-- An interrupted configuration resumed through the established root connection.
-- Custom policy selection/preservation/reset and personal setting preservation/
-  replacement passed, with projects and synthetic credentials retained.
-- Host-bundled dotfiles ran independently as root and dev; hooks survived a
-  dotfiles installer replacing the login profile with an early return.
-- Extra packages, literal environment values, credential rotation, and restart
-  passed. SSH through Lima's regenerated connection configuration survived its
-  changed port after restart.
-
-Linux hosts and x86_64 guests have not received this experiment's end-to-end run.
-
-Run host tests and syntax checks:
+Linux hosts and x86_64 guests have not received an end-to-end run of this version.
 
 ```sh
-.build/ansible/bin/python -m unittest discover -s environment -p 'test_*.py'
-ANSIBLE_LOCAL_TEMP=/tmp/ansible-syntax .build/ansible/bin/ansible-playbook -i 'development,' environment/setup.yaml --syntax-check
-ANSIBLE_LOCAL_TEMP=/tmp/ansible-syntax .build/ansible/bin/ansible-playbook -i 'development,' environment/bootstrap.yaml --syntax-check
-limactl validate environment/lima.yaml
+ruby environment/test_launcher.rb
+bash -n environment/provision.sh environment/setup-user.sh lima/provision.sh
+# Creates a disposable VM and tests custom setup, credentials, and restart:
+ruby environment/acceptance.rb native-parity-test
 ```
 
-For destructive-to-test-state acceptance, create a **disposable** test VM:
-
-```sh
-environment/dev create ansible-parity-test
-.build/ansible/bin/python environment/acceptance.py ansible-parity-test
-```
-
-Acceptance deliberately changes that VM's personal configuration and synthetic
-credentials. It exercises custom policies, preservation, explicit replacement,
-reset, dotfiles for both accounts, package installation, literal environment
-values, credential rotation, and restart. It leaves the VM and its alias for
-inspection. Stop it with `limactl stop ansible-parity-test` when finished.
-
-The existing verifier measures account isolation and agent policy behavior,
-including behavior that a selected policy intentionally leaves unrestricted.
-Authenticated model calls, actual private-repository authorization, and
-desktop-provided runtimes/connectors are outside these checks.
+The acceptance test leaves its VM and SSH alias for inspection. Stop the VM with
+`limactl stop native-parity-test` when finished. It uses synthetic credentials,
+not real account authentication. The existing verifier measures selected policy
+behavior, including intentionally unrestricted behavior; it does not certify
+network allowlists, desktop runtimes/connectors, or private repository scope.

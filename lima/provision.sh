@@ -227,6 +227,9 @@ sudo -u dev -H env -i HOME=/home/dev USER=dev LOGNAME=dev PATH=/usr/bin:/bin \
   /bin/bash /usr/local/share/devwright/setup-credentials.sh
 
 # Select the verifier for the guest architecture, independently of the host.
+# Lima-native recipes transfer this test artifact after boot to stay below Lima's
+# template size limit. The Go CLI retains its embedded-verifier installation.
+if [ "${install_verifier:-true}" = true ]; then
 verify_tmp=$(mktemp /usr/local/share/devwright/verify.XXXXXX)
 trap 'rm -f "$verify_tmp"' EXIT
 case "$(uname -m)" in
@@ -237,6 +240,7 @@ esac | base64 -d | gzip -d > "$verify_tmp"
 chmod 755 "$verify_tmp"
 mv -f "$verify_tmp" /usr/local/share/devwright/verify
 trap - EXIT
+fi
 printf '%s\n' 'devwright-v1' > /usr/local/share/devwright/managed
 printf '%s\n' "$codex_version" > /usr/local/share/devwright/codex-version
 printf '%s\n' "$claude_version" > /usr/local/share/devwright/claude-version
