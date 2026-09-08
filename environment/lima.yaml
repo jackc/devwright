@@ -1,0 +1,35 @@
+# VM layer of the Lima + Ansible direction. Guest provisioning is separate.
+# This creates a bootstrap machine; dev retains sudo until Ansible revokes it.
+minimumLimaVersion: "2.2.0"
+base:
+  - template:_images/ubuntu-26.04
+
+# Let Lima select the native architecture and default VM driver, as before.
+cpus: 4
+memory: 4GiB
+disk: 60GiB
+
+# Preserve devwright's boundary: no host mounts, automatic application port
+# forwarding, guest agent, or bundled container runtime.
+plain: true
+mounts: []
+containerd:
+  system: false
+  user: false
+ssh:
+  forwardAgent: false
+  loadDotSSHPubKeys: false
+propagateProxyEnv: false
+
+# Lima creates the initial SSH account and supplies its own public login key.
+# Ansible must establish and verify root SSH before removing dev's sudo access.
+user:
+  name: dev
+  comment: Shared development account
+  home: /home/dev
+  uid: 1000
+  shell: /bin/bash
+  passwordlessSudo: true
+
+# No guest setup on boot. Ansible will own explicit configuration runs.
+provision: []
