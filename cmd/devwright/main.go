@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	devwright "github.com/jackc/devwright"
+	devwright "github.com/jackc/devwright/internal/launch"
 )
 
 var version = "dev"

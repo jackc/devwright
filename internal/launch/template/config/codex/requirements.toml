@@ -1,0 +1,12 @@
+# Installed as root; applies to all supported Codex runtimes in this VM.
+# Sandbox and approval modes are user preferences, not managed restrictions.
+
+[features]
+apps = false
+plugins = false
+browser_use = false
+in_app_browser = false
+computer_use = false
+
+# An explicitly empty approved list disables locally configured MCP servers.
+[mcp_servers]

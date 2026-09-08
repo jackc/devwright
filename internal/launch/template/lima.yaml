@@ -1,0 +1,52 @@
+# Native Lima configuration. Works directly with limactl too.
+minimumLimaVersion: "2.2.0"
+base:
+  - template:_images/ubuntu-26.04
+cpus: 4
+memory: 4GiB
+disk: 60GiB
+plain: true
+mounts: []
+containerd:
+  system: false
+  user: false
+ssh:
+  forwardAgent: false
+  loadDotSSHPubKeys: false
+propagateProxyEnv: false
+user:
+  name: dev
+  home: /home/dev
+  uid: 1000
+  shell: /bin/bash
+  passwordlessSudo: true
+# Non-secret project environment belongs here.
+env: {}
+provision:
+  - mode: data
+    path: /etc/codex/requirements.toml
+    file: config/codex/requirements.toml
+    overwrite: false
+  - mode: data
+    path: /etc/claude-code/managed-settings.json
+    file: config/claude/managed-settings.json
+    overwrite: false
+  - mode: data
+    path: /usr/local/share/devwright/codex-config.toml
+    file: config/codex/config.toml
+    overwrite: false
+  - mode: data
+    path: /usr/local/share/devwright/claude-settings.json
+    file: config/claude/settings.json
+    overwrite: false
+  - mode: system
+    file: setup-system.sh
+  - mode: user
+    file: setup-user.sh
+probes:
+  - mode: readiness
+    description: Project VM setup completed
+    script: |
+      #!/bin/bash
+      test -f /usr/local/share/devwright/system-setup-complete &&
+        test -f "$HOME/.local/state/devwright/user-setup-complete"

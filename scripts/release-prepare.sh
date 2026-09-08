@@ -2,15 +2,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 "${GO:-go}" mod download
-bash scripts/build-guest.sh
 mkdir -p .build/release-licenses
-for dependency in golang.org/x/sys github.com/pelletier/go-toml/v2 github.com/google/jsonschema-go; do
+for dependency in golang.org/x/sys golang.org/x/term gopkg.in/yaml.v3 github.com/spf13/cobra github.com/spf13/pflag github.com/inconshreveable/mousetrap; do
   module_dir=$("${GO:-go}" list -m -f '{{.Dir}}' "$dependency")
   case "$dependency" in
     golang.org/x/sys) name=golang-x-sys ;;
-    github.com/pelletier/go-toml/v2) name=go-toml ;;
-    github.com/google/jsonschema-go) name=jsonschema-go ;;
+    golang.org/x/term) name=golang-x-term ;;
+    gopkg.in/yaml.v3) name=yaml ;;
+    github.com/spf13/cobra) name=cobra ;;
+    github.com/spf13/pflag) name=pflag ;;
+    github.com/inconshreveable/mousetrap) name=mousetrap ;;
   esac
-  cp -f "$module_dir/LICENSE" ".build/release-licenses/$name.txt"
+  license="$module_dir/LICENSE"
+  if [ ! -f "$license" ]; then license="$module_dir/LICENSE.txt"; fi
+  cp -f "$license" ".build/release-licenses/$name.txt"
 done
-cp -f internal/claudepolicy/schema/LICENSE .build/release-licenses/claude-settings-schema.txt

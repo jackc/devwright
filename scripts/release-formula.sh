@@ -11,12 +11,14 @@ checksum() { shasum -a 256 "$dist/devwright_${version}_$1.tar.gz" | cut -d ' ' -
 base="https://github.com/$repository/releases/download/$version"
 cat > "$dist/devwright.rb" <<FORMULA
 class Devwright < Formula
-  desc "Manage development VMs, containers, or restricted users"
+  desc "Create project development VMs from native Lima recipes"
   homepage "https://github.com/$repository"
   version "${version#v}"
 
+  depends_on "lima"
+  depends_on "git"
+
   on_macos do
-    depends_on "lima"
     on_arm do
       url "$base/devwright_${version}_darwin_arm64.tar.gz"
       sha256 "$(checksum darwin_arm64)"
@@ -39,12 +41,13 @@ class Devwright < Formula
 
   def install
     bin.install "devwright"
-    doc.install "README.md", "DEVELOPMENT.md", "VALIDATION.md", "CLAUDE-CODE-DESIGN.md", "docs", "licenses"
+    doc.install "README.md", "DEVELOPMENT.md", "LEGACY.md", "LEGACY-DEVELOPMENT.md", "VALIDATION.md", "CLAUDE-CODE-DESIGN.md", "docs", "licenses"
   end
 
   test do
     assert_match "devwright $version", shell_output("#{bin}/devwright version")
-    assert_equal true, JSON.parse(shell_output("#{bin}/devwright render"))["plain"]
+    system bin/"devwright", "init", testpath.to_s
+    assert_match "plain: true", (testpath/".devwright/lima.yaml").read
   end
 end
 FORMULA

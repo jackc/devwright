@@ -15,12 +15,15 @@ description = "Build and compress Linux/macOS verifiers"
 run = "bash scripts/build-guest.sh"
 
 [tasks.build]
-description = "Build .build/devwright with embedded guest verifiers"
-depends = ["guest"]
+description = "Build the standalone project launcher (no guest artifacts)"
 run = 'CGO_ENABLED=0 "${GO:-go}" build -trimpath -ldflags "-X main.version=${VERSION:-dev}" -o .build/devwright ./cmd/devwright'
 
 [tasks.test]
-description = "Run Go tests"
+description = "Run project launcher tests"
+run = '"${GO:-go}" test ./internal/launch'
+
+[tasks.test-legacy]
+description = "Run all Go tests, including historical backend and verifier tests"
 depends = ["guest"]
 run = '"${GO:-go}" test ./...'
 
@@ -28,10 +31,9 @@ run = '"${GO:-go}" test ./...'
 description = "Run tests, build, Go vet, and Bash syntax checks"
 depends = ["test", "build"]
 run = [
-  '"${GO:-go}" vet ./...',
+  '"${GO:-go}" vet ./internal/launch ./cmd/devwright',
   'goreleaser check',
-  'python3 -m unittest discover -s tests -p "test_*.py"',
-  'for script in lima/bootstrap.sh lima/provision.sh lima/dotfiles.sh lima/credentials.sh incus/bootstrap.sh scripts/build-guest.sh scripts/release.sh scripts/release-prepare.sh scripts/release-formula.sh tests/environment-linux.sh tests/users-linux.sh tests/users-linux-vm.sh tests/users-macos.sh; do bash -n "$script" || exit; done',
+  'for script in internal/launch/template/*.sh internal/launch/scripts/*.sh scripts/release.sh scripts/release-prepare.sh scripts/release-formula.sh; do bash -n "$script" || exit; done',
 ]
 
 [tasks.release]

@@ -21,6 +21,8 @@ archives:
     files:
       - README.md
       - DEVELOPMENT.md
+      - LEGACY.md
+      - LEGACY-DEVELOPMENT.md
       - VALIDATION.md
       - CLAUDE-CODE-DESIGN.md
       - docs/**
