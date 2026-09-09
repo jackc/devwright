@@ -5,7 +5,9 @@ base:
 cpus: 4
 memory: 4GiB
 disk: 60GiB
-plain: true
+# Enable the guest agent and automatic localhost port forwarding.
+# Keep filesystem sharing, bundled containerd, and SSH agent forwarding disabled.
+plain: false
 mounts: []
 containerd:
   system: false

@@ -23,9 +23,22 @@ cd ~/projects/my-project
 
 `init` refuses to overwrite an existing `.devwright` directory. Its starter recipe
 provides Ubuntu 26.04, current Codex and Claude Code, managed agent defaults, a
-non-sudo `dev` account, and key-only root SSH. It disables host mounts, SSH agent
-forwarding, and automatic application port forwarding. Project recipes can change
-these choices. Packages are not version-pinned.
+non-sudo `dev` account, and key-only root SSH. It enables automatic application
+port forwarding to the host's localhost while disabling host mounts, SSH agent
+forwarding, and bundled containerd. Project recipes can change these choices.
+Packages are not version-pinned.
+
+An app listening on port 3000 inside the VM is available at `http://localhost:3000`
+on the host, provided that host port is free. Lima manages forwarding automatically;
+no separate SSH tunnel is needed. Forwarding binds to host loopback by default,
+so it does not publish the app to the LAN. Use native Lima `portForwards` rules to
+remap or exclude ports.
+
+This default applies to newly initialized recipes. For an existing VM, stop it,
+run `limactl edit NAME`, set `plain: false`, and retain `mounts: []`,
+`ssh.forwardAgent: false`, and both `containerd.system: false` and
+`containerd.user: false`, then start it again. Update the project's
+`.devwright/lima.yaml` too so future VMs use the same settings.
 
 Choose the development account with `user.name`, `user.home`, and `user.uid` in
 `lima.yaml`. The starter home defaults to `/home/{{.User}}`; its system script
