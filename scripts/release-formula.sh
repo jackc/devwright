@@ -47,7 +47,7 @@ class Devwright < Formula
   test do
     assert_match "devwright $version", shell_output("#{bin}/devwright version")
     system bin/"devwright", "init", testpath.to_s
-    assert_match "plain: true", (testpath/".devwright/lima.yaml").read
+    assert_match "plain: false", (testpath/".devwright/lima.yaml").read
   end
 end
 FORMULA
