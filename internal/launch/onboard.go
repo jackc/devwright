@@ -62,15 +62,8 @@ func (a *app) finish(name string) error {
 			return e
 		}
 	}
-	if m.Dotfiles != nil {
-		if e = a.installRepository(s, user, m.Dotfiles, "dotfiles.bundle", ".local/share/devwright/dotfiles", m.Installer); e != nil {
-			return e
-		}
-		if m.RootDotfiles {
-			if e = a.installRepository(s, "root", m.Dotfiles, "dotfiles.bundle", ".local/share/devwright/dotfiles", m.Installer); e != nil {
-				return e
-			}
-		}
+	if e = a.installDotfiles(s, m); e != nil {
+		return e
 	}
 	if e = a.setupCredentials(s); e != nil {
 		return e
@@ -91,6 +84,24 @@ func (a *app) finish(name string) error {
 		return e
 	}
 	fmt.Fprintf(a.out, "Ready: ssh lima-%s\nProject: ~/projects/%s\n", name, name)
+	return nil
+}
+
+func (a *app) installDotfiles(s instance, m manifest) error {
+	if m.Dotfiles == nil {
+		return nil
+	}
+	if m.RootDotfiles {
+		// One root-owned checkout is readable by the development user's group,
+		// so the installer can switch users without leaving its source behind.
+		if e := a.installCheckout(s, m.Dotfiles, checkoutInstall{user: "root", bundle: "dotfiles.bundle", path: sharedDotfilesPath, installer: m.Installer, shared: true}); e != nil {
+			return fmt.Errorf("dotfiles installer as root: %w", e)
+		}
+		return nil
+	}
+	if e := a.installRepository(s, s.Config.User.Name, m.Dotfiles, "dotfiles.bundle", ".local/share/devwright/dotfiles", m.Installer); e != nil {
+		return fmt.Errorf("dotfiles installer as %s: %w", s.Config.User.Name, e)
+	}
 	return nil
 }
 
@@ -148,20 +159,46 @@ func cloudReady(raw string) error {
 	}
 	return nil
 }
+
+const sharedDotfilesPath = "/usr/local/share/devwright/dotfiles"
+
+type checkoutInstall struct {
+	user, bundle, path, installer string
+	shared                        bool
+}
+
 func (a *app) installRepository(s instance, user string, r *repository, bundle, relative, installer string) error {
-	if !safeRelative(relative) || !safeRelative(r.Branch) || (installer != "" && !safeRelative(installer)) {
+	return a.installCheckout(s, r, checkoutInstall{user: user, bundle: bundle, path: relative, installer: installer})
+}
+
+func (a *app) installCheckout(s instance, r *repository, o checkoutInstall) error {
+	validPath := safeRelative(o.path)
+	if o.shared {
+		validPath = o.user == "root" && o.path == sharedDotfilesPath
+	}
+	if !validPath || !safeRelative(r.Branch) || (o.installer != "" && !safeRelative(o.installer)) {
 		return errors.New("invalid saved repository path")
 	}
-	f, e := os.Open(filepath.Join(s.Dir, "devwright", bundle))
+	f, e := os.Open(filepath.Join(s.Dir, "devwright", o.bundle))
 	if e != nil {
 		return e
 	}
 	defer f.Close()
-	// Stream outside Lima's YAML (and its template size limit). Each account gets
-	// its own upload and checkout. Root never runs an installer from dev's files.
+	// Stream outside Lima's YAML (and its template size limit). Root owns every
+	// checkout it executes, including the shared privileged-installer checkout.
+	target := `"$HOME/` + o.path + `"`
+	if o.shared {
+		target = quote(o.path)
+	}
 	script := `set -euo pipefail
 umask 077
-target="$HOME/` + relative + `"
+target=` + target + `
+`
+	if o.shared {
+		script += `install -d -o root -g root -m 755 "$(dirname "$target")"
+`
+	}
+	script += `
 mkdir -p "$(dirname "$target")"
 stage=$(mktemp -d "$(dirname "$target")/.devwright-transfer.XXXXXXXX")
 trap 'rm -rf -- "$stage"' EXIT
@@ -180,17 +217,43 @@ if [ ! -e "$target" ]; then
 fi
 test "$(cat "$target/.git/devwright-source")" = ` + quote(r.Commit) + `
 `
-	if installer != "" {
+	if o.shared {
+		// Do not follow repository symlinks while granting read access. The
+		// development user can source files here but cannot replace root's code.
+		script += `chgrp -hR -- "$(id -g -- ` + quote(s.Config.User.Name) + `)" "$target"
+chmod -R -- g+rX,g-w,o-rwx "$target"
+`
+	}
+	if o.installer != "" {
 		script += `if [ ! -f "$target/.git/devwright-installed" ]; then
   cd "$target"
-  test -x ` + quote(installer) + `
-  ` + quote("./"+installer) + `
+  export DEVWRIGHT_USER=` + quote(s.Config.User.Name) + `
+  export DEVWRIGHT_HOME=` + quote(s.Config.User.Home) + `
+  export DEVWRIGHT_UID=` + quote(fmt.Sprint(s.Config.User.UID)) + `
+  test -x ` + quote(o.installer) + `
+  ` + quote("./"+o.installer) + `
   touch "$target/.git/devwright-installed"
 fi
 `
 	}
-	return a.ssh(s, user, script, f, a.out)
+	return a.ssh(s, o.user, script, f, a.out)
 }
+
+const declaredCredentialsLoader = `# BEGIN DEVWRIGHT DECLARED CREDENTIALS
+. "$HOME/.config/devwright/environment.sh"
+devwright_load_declared_credentials() {
+  # Keep an empty glob harmless in Zsh without changing the caller's options.
+  if [ -n "${ZSH_VERSION-}" ]; then setopt localoptions nonomatch; fi
+  for devwright_credential in "$HOME/.config/devwright/credentials.d/"*.sh; do
+    [ ! -f "$devwright_credential" ] || . "$devwright_credential"
+  done
+}
+devwright_load_declared_credentials
+unset -f devwright_load_declared_credentials
+unset devwright_credential
+# END DEVWRIGHT DECLARED CREDENTIALS
+`
+
 func (a *app) setupCredentials(s instance) error {
 	b, e := assets.ReadFile("scripts/credentials.sh")
 	if e != nil {
@@ -213,14 +276,7 @@ mkdir -p "$directory/credentials.d"
 chmod 700 "$directory/credentials.d"
 if ! grep -Fqx '# BEGIN DEVWRIGHT DECLARED CREDENTIALS' "$credentials"; then
 cat >> "$credentials" <<'LOADER'
-# BEGIN DEVWRIGHT DECLARED CREDENTIALS
-. "$HOME/.config/devwright/environment.sh"
-for devwright_credential in "$HOME/.config/devwright/credentials.d/"*.sh; do
-  [ ! -f "$devwright_credential" ] || . "$devwright_credential"
-done
-unset devwright_credential
-# END DEVWRIGHT DECLARED CREDENTIALS
-LOADER
+` + declaredCredentialsLoader + `LOADER
 fi
 `
 	return a.ssh(s, s.Config.User.Name, "/bin/bash -s", strings.NewReader(script), a.out)

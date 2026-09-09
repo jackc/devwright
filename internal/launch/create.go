@@ -112,7 +112,7 @@ func (a *app) create(name string, o options) error {
 	if e = validateCredentials(declarations); e != nil {
 		return e
 	}
-	m := manifest{Version: 1, Project: project, LocalProject: localProject, Installer: o.installer, RootDotfiles: o.rootDotfiles, Credentials: declarations}
+	m := manifest{Project: project, LocalProject: localProject, Installer: o.installer, RootDotfiles: o.rootDotfiles, Credentials: declarations}
 	if o.dotfiles != "" {
 		m.Dotfiles, e = a.snapshot(o.dotfiles, "", filepath.Join(temp, "dotfiles"))
 		if e != nil {
@@ -218,9 +218,6 @@ func (a *app) saved(name string) (instance, manifest, error) {
 	}
 	if e = json.Unmarshal(b, &m); e != nil {
 		return s, m, e
-	}
-	if m.Version != 1 {
-		return s, m, errors.New("unsupported onboarding version")
 	}
 	return s, m, validateCredentials(m.Credentials)
 }

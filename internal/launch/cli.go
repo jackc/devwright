@@ -48,7 +48,6 @@ type credential struct {
 }
 type repository struct{ Origin, Commit, Branch string }
 type manifest struct {
-	Version           int
 	Project, Dotfiles *repository
 	LocalProject      string
 	Installer         string
@@ -132,7 +131,7 @@ func Run(ctx context.Context, args []string, version string, in io.Reader, out, 
 	f.StringVar(&o.dotfiles, "dotfiles", "", "Personal dotfiles repository; overrides user defaults")
 	f.StringVar(&o.installer, "dotfiles-install", "install", "Executable installer relative to dotfiles checkout")
 	f.BoolVar(&o.noDotfiles, "no-dotfiles", false, "Skip personal dotfiles")
-	f.BoolVar(&o.rootDotfiles, "dotfiles-root", false, "Also install a separate dotfiles checkout as root")
+	f.BoolVar(&o.rootDotfiles, "dotfiles-root", false, "Invoke the installer once as root; the installer manages user setup")
 	f.IntVar(&o.cpus, "cpus", 0, "Lima CPU override")
 	f.StringVar(&o.memory, "memory", "", "Lima memory override, in GiB")
 	f.StringVar(&o.disk, "disk", "", "Lima disk override, in GiB")

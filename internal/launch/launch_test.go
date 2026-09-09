@@ -176,6 +176,16 @@ func TestAcceptance(t *testing.T) {
 	if e := a.init(project); e != nil {
 		t.Fatal(e)
 	}
+	// Exercise the starter system script with a different account and home,
+	// including ownership, sudo restrictions, and initial agent configuration.
+	recipePath := filepath.Join(project, ".devwright/lima.yaml")
+	recipe, e := os.ReadFile(recipePath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	customRecipe := strings.Replace(string(recipe), "  name: dev\n", "  name: builder\n", 1)
+	customRecipe = strings.Replace(customRecipe, `  home: "/home/{{.User}}"`, "  home: /srv/builder-home", 1)
+	writeTest(t, recipePath, customRecipe)
 	writeTest(t, filepath.Join(project, ".devwright/credentials.yaml"), "- name: DEVWRIGHT_TEST_TOKEN\n  description: Synthetic test token\n")
 	writeTest(t, filepath.Join(project, ".devwright/setup-project.sh"), "#!/bin/bash\nset -euo pipefail\ntest \"$DEVWRIGHT_TEST_TOKEN\" = 'synthetic-first'\nprintf 'project setup\\n' >> setup-count\n")
 	commitTest(t, project)
@@ -184,7 +194,6 @@ func TestAcceptance(t *testing.T) {
 	commitTest(t, dotfiles)
 	// Force the remote-style fetch path by using file://, including branch selection.
 	defer a.run("limactl", "stop", name)
-	var e error
 	if os.Getenv("DEVWRIGHT_ACCEPTANCE_RESUME") == "1" {
 		e = a.finish(name)
 	} else {
@@ -216,6 +225,10 @@ func TestAcceptance(t *testing.T) {
 	}
 	check := `set -euo pipefail
 . "$HOME/.config/devwright/credentials.sh"
+test "$(id -un)" = builder
+test "$HOME" = /srv/builder-home
+test "$(stat -c %U "$HOME/.codex/config.toml")" = builder
+test "$(stat -c %U "$HOME/.claude/settings.json")" = builder
 test "$DEVWRIGHT_TEST_TOKEN" = synthetic-second
 test "$(wc -l < "$HOME/dotfiles-count")" -eq 1
 test "$(wc -l < "$HOME/projects/` + name + `/setup-count")" -eq 1
@@ -264,9 +277,7 @@ user:
   home: /home/developer
   uid: 1001
   shell: /bin/bash
-  passwordlessSudo: true
-param:
-  Expected: works
+  passwordlessSudo: false
 env:
   PROJECT_ENV: literal-value
 provision:
@@ -281,8 +292,6 @@ probes:
       test -f /var/tmp/project-ready
       test "{{.User}}" = developer
       test "{{.Home}}" = /home/developer
-      test "{{.Param.Expected}}" = works
-      test "$PARAM_Expected" = works
 `)
 	writeTest(t, filepath.Join(project, ".devwright/system.sh"), `#!/bin/bash
 set -eu
@@ -291,28 +300,85 @@ apt-get update -qq
 apt-get install -y --no-install-recommends git
 install -d -m 700 /root/.ssh
 install -m 600 /home/developer/.ssh/authorized_keys /root/.ssh/authorized_keys
+groupadd builders
+usermod -g builders developer
+touch /var/tmp/dotfiles-fail-root /var/tmp/dotfiles-fail-user /var/tmp/dotfiles-symlink-canary
+chmod 600 /var/tmp/dotfiles-symlink-canary
+sha256sum /root/.bashrc /root/.profile > /root/startup-before
 touch /var/tmp/project-ready
 `)
 	commitTest(t, project)
 	// Local recipe edits must be honored without copying uncommitted project data.
 	writeTest(t, filepath.Join(project, ".devwright/setup-project.sh"), "#!/bin/bash\nset -eu\ntest \"$PROJECT_ENV\" = literal-value\nprintf done > local-hook-result\n")
 	dotfiles := fixture(t)
-	writeTest(t, filepath.Join(dotfiles, "install"), "#!/bin/bash\nset -eu\nprintf '%s' \"$(id -un)\" > \"$HOME/dotfiles-account\"\n")
-	commitTest(t, dotfiles)
-	defer a.run("limactl", "stop", name)
-	if e := a.create(name, options{from: project, recipe: ".devwright/lima.yaml", dotfiles: dotfiles, installer: "install", rootDotfiles: true}); e != nil {
+	writeTest(t, filepath.Join(dotfiles, "install"), `#!/bin/bash
+set -eu
+test "$DEVWRIGHT_USER" = developer
+test "$DEVWRIGHT_HOME" = /home/developer
+test "$DEVWRIGHT_UID" = 1001
+test "$(id -u)" = 0
+test "$HOME" = /root
+test "$(stat -c '%a:%G' /var/tmp/dotfiles-symlink-canary)" = 600:root
+printf 'installed\n' >> "$HOME/dotfiles-count"
+test ! -e /var/tmp/dotfiles-fail-root
+touch /var/tmp/dotfiles-system-ready
+exec runuser -u "$DEVWRIGHT_USER" -- env HOME="$DEVWRIGHT_HOME" /bin/bash scripts/install-user
+`)
+	writeTest(t, filepath.Join(dotfiles, "settings.sh"), "DOTFILES_SETTING=loaded\n")
+	writeTest(t, filepath.Join(dotfiles, "scripts/install-user"), `#!/bin/bash
+set -eu
+test "$(id -un)" = developer
+test "$(id -gn)" = builders
+test "$HOME" = "$DEVWRIGHT_HOME"
+test "$USER" = "$DEVWRIGHT_USER"
+test "$DEVWRIGHT_UID" = 1001
+test -f /var/tmp/dotfiles-system-ready
+test ! -w install
+test ! -w .
+. ./settings.sh
+test "$DOTFILES_SETTING" = loaded
+! sudo -n true
+printf 'installed\n' >> "$HOME/dotfiles-count"
+test ! -e /var/tmp/dotfiles-fail-user
+`)
+	if e := os.Symlink("/var/tmp/dotfiles-symlink-canary", filepath.Join(dotfiles, "outside")); e != nil {
 		t.Fatal(e)
 	}
-	s, _, e := a.saved(name)
+	commitTest(t, dotfiles)
+	defer a.run("limactl", "stop", name)
+	if e := a.create(name, options{from: project, recipe: ".devwright/lima.yaml", dotfiles: dotfiles, installer: "install", rootDotfiles: true}); e == nil || !strings.Contains(e.Error(), "dotfiles installer as root") {
+		t.Fatalf("expected root setup failure, got %v", e)
+	}
+	s, m, e := a.saved(name)
 	if e != nil {
 		t.Fatal(e)
 	}
-	check := "set -eu; test \"$(cat \"$HOME/dotfiles-account\")\" = developer; sudo -n true; test \"$(cat \"$HOME/projects/" + name + "/local-hook-result\")\" = done; test ! -e /usr/local/bin/codex"
-	if e = a.ssh(s, "developer", check, nil, a.out); e != nil {
+	if !m.RootDotfiles {
+		t.Fatalf("expected saved privileged execution mode, got %+v", m)
+	}
+	if e = a.ssh(s, "root", "set -eu; test ! -e "+sharedDotfilesPath+"/.git/devwright-installed; test ! -e /home/developer/dotfiles-count; rm /var/tmp/dotfiles-fail-root", nil, a.out); e != nil {
 		t.Fatal(e)
 	}
-	if e = a.ssh(s, "root", "test \"$(cat /root/dotfiles-account)\" = root", nil, a.out); e != nil {
+	if e = a.finish(name); e == nil || !strings.Contains(e.Error(), "dotfiles installer as root") {
+		t.Fatalf("expected user setup failure propagated through root entry point, got %v", e)
+	}
+	if e = a.ssh(s, "root", "set -eu; test ! -e "+sharedDotfilesPath+"/.git/devwright-installed; rm /var/tmp/dotfiles-fail-user", nil, a.out); e != nil {
 		t.Fatal(e)
+	}
+	if e = a.finish(name); e != nil {
+		t.Fatal(e)
+	}
+	check := "set -eu; test \"$(wc -l < \"$HOME/dotfiles-count\")\" -eq 2; ! sudo -n true; test \"$(cat \"$HOME/projects/" + name + "/local-hook-result\")\" = done; test ! -e /usr/local/bin/codex; test ! -e \"$HOME/.local/share/devwright/dotfiles\""
+	for range 2 {
+		if e = a.finish(name); e != nil {
+			t.Fatal(e)
+		}
+		if e = a.ssh(s, "developer", check, nil, a.out); e != nil {
+			t.Fatal(e)
+		}
+		if e = a.ssh(s, "root", "set -eu; test \"$(wc -l < /root/dotfiles-count)\" -eq 3; test -f "+sharedDotfilesPath+"/.git/devwright-installed; test \"$(stat -c %U "+sharedDotfilesPath+")\" = root; test ! -e /root/.local/share/devwright/dotfiles; sha256sum -c /root/startup-before", nil, a.out); e != nil {
+			t.Fatal(e)
+		}
 	}
 	alias := filepath.Join(a.home, ".ssh/devwright", name+".config")
 	if e = a.run("ssh", "-F", alias, "-o", "BatchMode=yes", "lima-"+name, "test \"$(id -un)\" = developer"); e != nil {
@@ -328,7 +394,7 @@ touch /var/tmp/project-ready
 	if e = a.ssh(s, "root", "touch /var/tmp/project-ready", nil, a.out); e != nil {
 		t.Fatal(e)
 	}
-	t.Log("PASS custom account, sudo-enabled recipe without agents, native template parameters, local recipe edits, explicit root dotfiles, SSH alias, readiness failure")
+	t.Log("PASS one root entry point, user handoff, shared read-only checkout, failure recovery, unchanged sudo/root startup files, custom account and group, SSH alias, readiness failure")
 }
 
 func TestCloudReadiness(t *testing.T) {

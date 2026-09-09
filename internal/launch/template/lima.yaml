@@ -16,7 +16,7 @@ ssh:
 propagateProxyEnv: false
 user:
   name: dev
-  home: /home/dev
+  home: "/home/{{.User}}"
   uid: 1000
   shell: /bin/bash
   passwordlessSudo: true

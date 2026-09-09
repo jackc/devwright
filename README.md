@@ -27,6 +27,12 @@ non-sudo `dev` account, and key-only root SSH. It disables host mounts, SSH agen
 forwarding, and automatic application port forwarding. Project recipes can change
 these choices. Packages are not version-pinned.
 
+Choose the development account with `user.name`, `user.home`, and `user.uid` in
+`lima.yaml`. The starter home defaults to `/home/{{.User}}`; its system script
+uses Lima's `{{.User}}` and looks up that account's home and primary group.
+Devwright uses the resolved Lima account for project files, personal dotfiles,
+credentials, and the SSH alias.
+
 The launcher does not enforce the starter template's agent policies on other
 recipes. There is no `verify` or `configure` command, and no verifier executable is
 installed. Native Lima readiness probes determine whether project setup succeeded;
@@ -111,11 +117,56 @@ dotfiles_root: false
 
 CLI flags override defaults. `--no-dotfiles` skips them. The default installer is
 an executable `install` in the repository root; select another with
-`--dotfiles-install scripts/install`. Installation uses a private checkout at
-`~/.local/share/devwright/dotfiles` and runs as the development user. Explicit
-`--dotfiles-root` additionally installs a separate checkout as root; the recipe
-must enable root SSH for that option. Successful installers are not rerun by
-`finish` or restarts.
+`--dotfiles-install scripts/install`. By default, Devwright invokes the installer
+once as the development user selected by Lima, from a private checkout at
+`~/.local/share/devwright/dotfiles`.
+
+`--dotfiles-root` (or `dotfiles_root: true`) instead invokes the installer **once
+as root**. The installer owns the sequence of system and personal setup. It can
+install packages and then switch to the development user with `runuser`; Devwright
+does not invoke it a second time or grant the development user sudo privileges.
+The recipe must enable root SSH. Root execution remains optional and defaults
+to false; the installer need not change root's personal configuration.
+
+Privileged installation uses one persistent checkout at
+`/usr/local/share/devwright/dotfiles`, owned by root and readable by the development
+user's primary group. The group cannot modify it, and other users have no access
+unless they share that group. Keep generated files in the user's home, not in this
+checkout. Both system setup and user setup can read its files, and shell startup
+files may continue sourcing them after installation.
+
+Either execution mode receives these variables from the resolved Lima config:
+
+| Variable | Value |
+| --- | --- |
+| `DEVWRIGHT_USER` | Development username, even when the installer runs as root |
+| `DEVWRIGHT_HOME` | Development user's home directory |
+| `DEVWRIGHT_UID` | Development user's numeric UID |
+
+`HOME` and `USER` belong to the account executing the installer. A single entry
+point can support both modes:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+if [[ $(id -u) -eq 0 ]]; then
+  bash scripts/install-system
+  exec runuser -u "$DEVWRIGHT_USER" -- \
+    env HOME="$DEVWRIGHT_HOME" /bin/bash scripts/install-user
+fi
+exec bash scripts/install-user
+```
+
+The system script can select the user's shell using `$DEVWRIGHT_USER`. The user
+script runs with the selected account's identity and home. The checkout stays
+root-owned, and the VM's sudo policy is unchanged.
+
+One completion marker is written only after the entire installer succeeds,
+including any user setup it waits for. `finish` retries the entire installer after
+failure and skips it after success, so it must tolerate partial completion.
+Restarts and `finish` use the saved repository snapshot and execution mode;
+changing host preferences does not change an existing VM's setup.
 
 ## Credentials and recovery
 

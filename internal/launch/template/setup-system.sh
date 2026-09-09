@@ -6,13 +6,18 @@ marker=/usr/local/share/devwright/system-setup-complete
 export DEBIAN_FRONTEND=noninteractive
 export HOME=/root USER=root LOGNAME=root
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# Creation only: establish root SSH before revoking dev's initial sudo access.
+# Lima expands the selected account before running this script.
+lima_user='{{.User}}'
+lima_home=$(getent passwd "$lima_user" | cut -d: -f6)
+lima_group=$(id -gn "$lima_user")
+# Creation only: establish root SSH before revoking the user's initial sudo access.
 
 test "$(id -u)" = 0
-test "$(getent passwd dev | cut -d: -f6)" = /home/dev
+test "$(id -u "$lima_user")" -ne 0
+test -d "$lima_home"
 install -d -o root -g root -m 700 /root/.ssh
 # Copy only the public login keys Lima installed; private keys stay on the host.
-install -o root -g root -m 600 /home/dev/.ssh/authorized_keys /root/.ssh/authorized_keys
+install -o root -g root -m 600 "$lima_home/.ssh/authorized_keys" /root/.ssh/authorized_keys
 cat > /etc/ssh/sshd_config.d/00-devwright-root.conf <<'SSH'
 PermitRootLogin prohibit-password
 PasswordAuthentication no
@@ -24,23 +29,23 @@ SSH
 systemctl reload ssh
 install -d -m 755 /usr/local/share/devwright
 policy_dir=/usr/local/share/devwright
-chmod 700 /root /home/dev
-usermod -G '' dev
-passwd -l dev >/dev/null
-printf '%s\n' 'dev ALL=(ALL:ALL) !ALL' > /etc/sudoers.d/99-devwright-dev
+chmod 700 /root "$lima_home"
+usermod -G '' "$lima_user"
+passwd -l "$lima_user" >/dev/null
+printf '%s ALL=(ALL:ALL) !ALL\n' "$lima_user" > /etc/sudoers.d/99-devwright-dev
 chmod 440 /etc/sudoers.d/99-devwright-dev
 visudo -cf /etc/sudoers >/dev/null
 apt-get update -qq
 apt-get install -y --no-install-recommends ca-certificates curl git gh jq ripgrep build-essential gzip zsh unzip bubblewrap apparmor gnupg socat
 # Add project system packages and services here.
-install -d -o dev -g dev -m 700 /home/dev/.codex /home/dev/.claude
-if [ ! -e /home/dev/.codex/config.toml ]; then
-  install -o dev -g dev -m 600 "$policy_dir/codex-config.toml" /home/dev/.codex/config.toml
+install -d -o "$lima_user" -g "$lima_group" -m 700 "$lima_home/.codex" "$lima_home/.claude"
+if [ ! -e "$lima_home/.codex/config.toml" ]; then
+  install -o "$lima_user" -g "$lima_group" -m 600 "$policy_dir/codex-config.toml" "$lima_home/.codex/config.toml"
 fi
-if [ ! -e /home/dev/.claude/settings.json ]; then
-  install -o dev -g dev -m 600 "$policy_dir/claude-settings.json" /home/dev/.claude/settings.json
+if [ ! -e "$lima_home/.claude/settings.json" ]; then
+  install -o "$lima_user" -g "$lima_group" -m 600 "$policy_dir/claude-settings.json" "$lima_home/.claude/settings.json"
 fi
-# Keep the standalone package root-owned and accessible to dev, outside /root.
+# Keep the standalone package root-owned and accessible to the development user, outside /root.
 install -d -m 755 /usr/local/share/codex
 codex_installer=$(mktemp)
 trap 'rm -f "$codex_installer"' EXIT
@@ -51,7 +56,7 @@ rm -f "$codex_installer"
 trap - EXIT
 codex_version=$(/usr/local/bin/codex --version)
 printf '%s\n' "$codex_version"
-sudo -u dev -H /usr/local/bin/codex --version
+sudo -u "$lima_user" -H /usr/local/bin/codex --version
 
 # Ubuntu's stock bubblewrap profile confines the commands bubblewrap runs to a
 # child profile that denies capabilities, which blocks the nested user namespace
@@ -107,12 +112,12 @@ apt-get update -qq
 apt-get install -y --no-install-recommends claude-code
 claude_version=$(/usr/bin/claude --version)
 printf '%s\n' "$claude_version"
-sudo -u dev -H /usr/bin/claude --version
+sudo -u "$lima_user" -H /usr/bin/claude --version
 
 git config --system --replace-all credential.https://github.com.helper ''
 git config --system --add credential.https://github.com.helper '!/usr/bin/gh auth git-credential'
 git config --system init.defaultBranch main
-sudo -u dev -H /usr/bin/gh config set git_protocol https --host github.com
+sudo -u "$lima_user" -H /usr/bin/gh config set git_protocol https --host github.com
 
 touch "$marker"
 echo 'System setup complete.'
