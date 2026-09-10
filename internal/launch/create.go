@@ -65,6 +65,21 @@ func (a *app) create(name string, o options) error {
 	if !safeRelative(o.recipe) {
 		return errors.New("recipe must be a path inside the project")
 	}
+	source := o.from
+	local := false
+	if st, e := os.Stat(source); e == nil && st.IsDir() {
+		local = true
+	}
+	projectName := o.projectName
+	if projectName == "" {
+		var e error
+		projectName, e = deriveProjectName(source, local)
+		if e != nil {
+			return e
+		}
+	} else if e := validateProjectName(projectName); e != nil {
+		return e
+	}
 	// Refuse duplicate names before cloning repositories or executing a recipe.
 	rows, e := a.capture("limactl", "list", "--format", "{{.Name}}")
 	if e != nil {
@@ -80,14 +95,11 @@ func (a *app) create(name string, o options) error {
 		return e
 	}
 	defer os.RemoveAll(temp)
-	source := o.from
-	local := false
-	if st, e := os.Stat(source); e == nil && st.IsDir() {
+	if local {
 		source, e = filepath.Abs(source)
 		if e != nil {
 			return e
 		}
-		local = true
 	}
 	var project *repository
 	var localProject string
@@ -112,7 +124,7 @@ func (a *app) create(name string, o options) error {
 	if e = validateCredentials(declarations); e != nil {
 		return e
 	}
-	m := manifest{Project: project, LocalProject: localProject, Installer: o.installer, RootDotfiles: o.rootDotfiles, Credentials: declarations}
+	m := manifest{Project: project, ProjectName: projectName, LocalProject: localProject, Installer: o.installer, RootDotfiles: o.rootDotfiles, Credentials: declarations}
 	if o.dotfiles != "" {
 		m.Dotfiles, e = a.snapshot(o.dotfiles, "", filepath.Join(temp, "dotfiles"))
 		if e != nil {
@@ -218,6 +230,13 @@ func (a *app) saved(name string) (instance, manifest, error) {
 	}
 	if e = json.Unmarshal(b, &m); e != nil {
 		return s, m, e
+	}
+	// Existing VMs predate source-based names and already use the VM name.
+	if m.ProjectName == "" {
+		m.ProjectName = name
+	}
+	if e = validateProjectName(m.ProjectName); e != nil {
+		return s, m, fmt.Errorf("invalid saved project name: %w", e)
 	}
 	return s, m, validateCredentials(m.Credentials)
 }

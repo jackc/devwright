@@ -53,12 +53,12 @@ func (a *app) finish(name string) error {
 		return e
 	}
 	if m.LocalProject != "" {
-		if e = a.installDirectory(s, m.LocalProject); e != nil {
+		if e = a.installDirectory(s, m.ProjectName, m.LocalProject); e != nil {
 			return e
 		}
 	}
 	if m.Project != nil {
-		if e = a.installRepository(s, user, m.Project, "project.bundle", "projects/"+name, ""); e != nil {
+		if e = a.installRepository(s, user, m.Project, "project.bundle", "projects/"+m.ProjectName, ""); e != nil {
 			return e
 		}
 	}
@@ -76,14 +76,14 @@ func (a *app) finish(name string) error {
 	}
 	hook, e := os.ReadFile(filepath.Join(s.Dir, "devwright/setup-project.sh"))
 	if e == nil {
-		script := "set -euo pipefail\nmarker=\"$HOME/.local/state/devwright/project-setup-complete\"\n[ ! -f \"$marker\" ] || exit 0\nmkdir -p \"$(dirname \"$marker\")\"\ncd \"$HOME/projects/" + name + "\"\n. \"$HOME/.config/devwright/credentials.sh\"\n/bin/bash -s\ntouch \"$marker\"\n"
+		script := "set -euo pipefail\nmarker=\"$HOME/.local/state/devwright/project-setup-complete\"\n[ ! -f \"$marker\" ] || exit 0\nmkdir -p \"$(dirname \"$marker\")\"\ncd \"$HOME/projects/" + m.ProjectName + "\"\n. \"$HOME/.config/devwright/credentials.sh\"\n/bin/bash -s\ntouch \"$marker\"\n"
 		if e = a.ssh(s, user, script, strings.NewReader(string(hook)), a.out); e != nil {
 			return fmt.Errorf("project setup failed; finish retries it: %w", e)
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return e
 	}
-	fmt.Fprintf(a.out, "Ready: ssh lima-%s\nProject: ~/projects/%s\n", name, name)
+	fmt.Fprintf(a.out, "Ready: ssh lima-%s\nProject: ~/projects/%s\n", name, m.ProjectName)
 	return nil
 }
 

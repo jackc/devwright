@@ -32,6 +32,7 @@ type app struct {
 }
 type options struct {
 	from, ref, recipe, dotfiles, installer string
+	projectName                            string
 	noDotfiles, rootDotfiles               bool
 	cpus                                   int
 	memory, disk                           string
@@ -49,6 +50,7 @@ type credential struct {
 type repository struct{ Origin, Commit, Branch string }
 type manifest struct {
 	Project, Dotfiles *repository
+	ProjectName       string
 	LocalProject      string
 	Installer         string
 	RootDotfiles      bool
@@ -92,6 +94,11 @@ func Run(ctx context.Context, args []string, version string, in io.Reader, out, 
 		if !validName.MatchString(args[0]) {
 			return errors.New("name must be 1–40 lowercase letters, digits, or hyphens, starting with a letter")
 		}
+		if c.Flags().Changed("project-name") {
+			if err := validateProjectName(o.projectName); err != nil {
+				return err
+			}
+		}
 		p := preferences{Installer: "install"}
 		prefDir := os.Getenv("XDG_CONFIG_HOME")
 		if prefDir == "" {
@@ -126,6 +133,7 @@ func Run(ctx context.Context, args []string, version string, in io.Reader, out, 
 	}}
 	f := create.Flags()
 	f.StringVar(&o.from, "from", ".", "Local directory or Git repository URL")
+	f.StringVar(&o.projectName, "project-name", "", "Guest directory under ~/projects (defaults to the source directory or repository name)")
 	f.StringVar(&o.ref, "ref", "", "Branch, tag, or commit (defaults to HEAD)")
 	f.StringVar(&o.recipe, "recipe", ".devwright/lima.yaml", "Recipe path relative to the project")
 	f.StringVar(&o.dotfiles, "dotfiles", "", "Personal dotfiles repository; overrides user defaults")

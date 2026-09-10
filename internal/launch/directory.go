@@ -101,7 +101,7 @@ func snapshotDirectory(source, archive string) (string, error) {
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
-func (a *app) installDirectory(s instance, digest string) error {
+func (a *app) installDirectory(s instance, projectName, digest string) error {
 	raw, e := hex.DecodeString(digest)
 	if e != nil || len(raw) != sha256.Size {
 		return fmt.Errorf("invalid saved directory snapshot")
@@ -111,7 +111,7 @@ func (a *app) installDirectory(s instance, digest string) error {
 		return e
 	}
 	defer f.Close()
-	return a.ssh(s, s.Config.User.Name, directoryScript(s.Name, digest), f, a.out)
+	return a.ssh(s, s.Config.User.Name, directoryScript(projectName, digest), f, a.out)
 }
 func directoryScript(name, digest string) string {
 	return `set -euo pipefail

@@ -73,7 +73,7 @@ func TestDirectoryAcceptance(t *testing.T) {
 	a := testApp(t)
 	a.out = os.Stdout
 	a.err = os.Stderr
-	project := t.TempDir()
+	project := filepath.Join(t.TempDir(), "full_stack_payments")
 	writeTest(t, filepath.Join(project, ".devwright/lima.yaml"), `minimumLimaVersion: "2.2.0"
 base:
   - template:_images/ubuntu-26.04
@@ -107,7 +107,10 @@ user:
 	if m.Project != nil || m.LocalProject == "" {
 		t.Fatal("local directory recorded as Git")
 	}
-	if e = a.ssh(s, "dev", "printf edited > \"$HOME/projects/"+name+"/local-script\"", nil, a.out); e != nil {
+	if m.ProjectName != "full_stack_payments" {
+		t.Fatalf("wrong saved project name: %q", m.ProjectName)
+	}
+	if e = a.ssh(s, "dev", "printf edited > \"$HOME/projects/"+m.ProjectName+"/local-script\"", nil, a.out); e != nil {
 		t.Fatal(e)
 	}
 	// The source directory may disappear after create; finish must use saved state.
@@ -117,7 +120,7 @@ user:
 	if e = a.finish(name); e != nil {
 		t.Fatal(e)
 	}
-	if e = a.ssh(s, "dev", "test \"$(cat \"$HOME/projects/"+name+"/local-script\")\" = edited; test \"$(cat \"$HOME/projects/"+name+"/hook-count\")\" = hook", nil, a.out); e != nil {
+	if e = a.ssh(s, "dev", "test \"$(cat \"$HOME/projects/"+m.ProjectName+"/local-script\")\" = edited; test \"$(cat \"$HOME/projects/"+m.ProjectName+"/hook-count\")\" = hook", nil, a.out); e != nil {
 		t.Fatal(e)
 	}
 	t.Log("PASS ordinary directory without Git, local/hidden/executable files, symlink, project hook, saved snapshot and preservation of guest edits")

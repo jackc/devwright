@@ -60,6 +60,25 @@ Git metadata (`.git` files/directories) is omitted. File permissions and symlink
 are preserved; symlinks are not followed. Special files such as sockets are rejected.
 The guest receives an independent directory, not a host mount or ongoing sync.
 
+The checkout directory is independent of the VM name. For a local `--from`,
+Devwright uses the source directory's basename after resolving the path. For a
+Git URL, it uses the final repository path component with `.git` removed.
+Case, underscores, dots, and hyphens are preserved:
+
+```sh
+cd full_stack_payments
+devwright create fsp-dev-vm --from .
+ssh lima-fsp-dev-vm
+cd ~/projects/full_stack_payments
+```
+
+Use `--project-name full_stack_payments` to choose a different directory name,
+including when copying from a temporary staging directory. Project names must
+be 1–255 ASCII letters, digits, dots, underscores, or hyphens, starting with a
+letter or digit; other source names require an explicit valid override. The
+chosen name is saved with the VM so `finish` can resume without the source.
+Existing VMs created before this option retain `~/projects/VM-NAME`.
+
 ## Create from a repository
 
 ```sh
@@ -78,7 +97,7 @@ files and recipe. A local directory without `--ref` always uses direct file copy
 
 The binary transfers Git bundles over SSH, separately from Lima configuration.
 This avoids Lima's template size limit for repository history. The guest gets a
-normal working checkout in `~/projects/NAME`, with its original remote URL when
+normal working checkout in `~/projects/PROJECT-NAME`, with its original remote URL when
 available. Host private keys, Git configuration, hooks, and agent sockets are not
 copied. Submodule repositories and Git LFS objects are not bundled; fetch them
 inside the guest with its own credentials. Subsequent private Git operations also
@@ -101,7 +120,7 @@ setup; partial failures retry. Custom scripts must implement their own retry and
 restart behavior. Provisioning has no project checkout or personal credentials;
 use `setup-project.sh` for commands such as `bundle install` that need them.
 
-The project hook runs as the development user in `~/projects/NAME`, with the
+The project hook runs as the development user in `~/projects/PROJECT-NAME`, with the
 credential loader sourced. It runs once successfully; `finish` retries a failed
 hook. It must tolerate partial completion. It is saved at creation, so edits to
 its original file don't change an existing VM.

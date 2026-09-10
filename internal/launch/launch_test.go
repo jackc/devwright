@@ -202,7 +202,7 @@ func TestAcceptance(t *testing.T) {
 	if e == nil || !strings.Contains(e.Error(), "missing DEVWRIGHT_TEST_TOKEN") {
 		t.Fatalf("expected missing-credential recovery, got %v", e)
 	}
-	s, _, e := a.saved(name)
+	s, m, e := a.saved(name)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -218,7 +218,7 @@ func TestAcceptance(t *testing.T) {
 			t.Fatal(e)
 		}
 		if i == 0 {
-			if e = a.ssh(s, s.Config.User.Name, "printf 'user data' > \"$HOME/projects/"+name+"/user-data\"", nil, a.out); e != nil {
+			if e = a.ssh(s, s.Config.User.Name, "printf 'user data' > \"$HOME/projects/"+m.ProjectName+"/user-data\"", nil, a.out); e != nil {
 				t.Fatal(e)
 			}
 		}
@@ -231,8 +231,8 @@ test "$(stat -c %U "$HOME/.codex/config.toml")" = builder
 test "$(stat -c %U "$HOME/.claude/settings.json")" = builder
 test "$DEVWRIGHT_TEST_TOKEN" = synthetic-second
 test "$(wc -l < "$HOME/dotfiles-count")" -eq 1
-test "$(wc -l < "$HOME/projects/` + name + `/setup-count")" -eq 1
-test "$(cat "$HOME/projects/` + name + `/user-data")" = 'user data'
+test "$(wc -l < "$HOME/projects/` + m.ProjectName + `/setup-count")" -eq 1
+test "$(cat "$HOME/projects/` + m.ProjectName + `/user-data")" = 'user data'
 test "$(stat -c %a "$HOME/.config/devwright/credentials.d/DEVWRIGHT_TEST_TOKEN.sh")" = 600
 test ! -e /usr/local/share/devwright/verify
 command -v codex
@@ -346,7 +346,7 @@ test ! -e /var/tmp/dotfiles-fail-user
 	}
 	commitTest(t, dotfiles)
 	defer a.run("limactl", "stop", name)
-	if e := a.create(name, options{from: project, recipe: ".devwright/lima.yaml", dotfiles: dotfiles, installer: "install", rootDotfiles: true}); e == nil || !strings.Contains(e.Error(), "dotfiles installer as root") {
+	if e := a.create(name, options{from: project, projectName: "custom_project", recipe: ".devwright/lima.yaml", dotfiles: dotfiles, installer: "install", rootDotfiles: true}); e == nil || !strings.Contains(e.Error(), "dotfiles installer as root") {
 		t.Fatalf("expected root setup failure, got %v", e)
 	}
 	s, m, e := a.saved(name)
@@ -355,6 +355,9 @@ test ! -e /var/tmp/dotfiles-fail-user
 	}
 	if !m.RootDotfiles {
 		t.Fatalf("expected saved privileged execution mode, got %+v", m)
+	}
+	if m.ProjectName != "custom_project" {
+		t.Fatalf("wrong saved project name: %q", m.ProjectName)
 	}
 	if e = a.ssh(s, "root", "set -eu; test ! -e "+sharedDotfilesPath+"/.git/devwright-installed; test ! -e /home/developer/dotfiles-count; rm /var/tmp/dotfiles-fail-root", nil, a.out); e != nil {
 		t.Fatal(e)
@@ -368,7 +371,7 @@ test ! -e /var/tmp/dotfiles-fail-user
 	if e = a.finish(name); e != nil {
 		t.Fatal(e)
 	}
-	check := "set -eu; test \"$(wc -l < \"$HOME/dotfiles-count\")\" -eq 2; ! sudo -n true; test \"$(cat \"$HOME/projects/" + name + "/local-hook-result\")\" = done; test ! -e /usr/local/bin/codex; test ! -e \"$HOME/.local/share/devwright/dotfiles\""
+	check := "set -eu; test \"$(wc -l < \"$HOME/dotfiles-count\")\" -eq 2; ! sudo -n true; test \"$(cat \"$HOME/projects/" + m.ProjectName + "/local-hook-result\")\" = done; test ! -e /usr/local/bin/codex; test ! -e \"$HOME/.local/share/devwright/dotfiles\""
 	for range 2 {
 		if e = a.finish(name); e != nil {
 			t.Fatal(e)

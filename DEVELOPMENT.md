@@ -56,3 +56,10 @@ guests have not received an end-to-end run of the new workflow.
 The local-directory workflow also passed a fresh VM acceptance run with host Git
 deliberately disabled: files, executable modes, hidden files, and symlinks arrived,
 and resumed onboarding preserved guest edits after the source directory was removed.
+
+Validated September 9, 2026: source-based project names and `--project-name`
+passed the launcher suite, build, Go vet, release configuration checks, and Bash
+syntax checks. Fresh local-directory, Git-repository, and custom-recipe VM
+acceptance runs passed, including distinct VM/project names, an explicit project
+name, retry/restart recovery, and preservation of guest edits. Unit tests also
+cover saved-name validation and the VM-name fallback for older onboarding state.
