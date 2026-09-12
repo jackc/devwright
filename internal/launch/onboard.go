@@ -21,7 +21,9 @@ func (a *app) ssh(s instance, user, script string, in io.Reader, out io.Writer) 
 	if s.Status != "Running" {
 		return errors.New("VM must be running; start it with limactl start")
 	}
-	return a.command(in, out, "ssh", "-F", filepath.Join(s.Dir, "ssh.config"), "-o", "IdentityAgent=none", "-o", "ForwardAgent=no", "-o", "ControlPath=~/.ssh/control-%C", "-o", "ControlMaster=auto", "-o", "ControlPersist=60", "-o", "BatchMode=yes", "-l", user, "lima-"+s.Name, "/bin/bash -c "+quote(script))
+	// Provisioning can change the login shell or groups. Authenticate each call
+	// afresh and never leave a shared connection for later interactive logins.
+	return a.command(in, out, "ssh", "-F", filepath.Join(s.Dir, "ssh.config"), "-o", "IdentityAgent=none", "-o", "ForwardAgent=no", "-o", "ControlPath=none", "-o", "ControlMaster=no", "-o", "ControlPersist=no", "-o", "BatchMode=yes", "-l", user, "lima-"+s.Name, "/bin/bash -c "+quote(script))
 }
 func (a *app) finish(name string) error {
 	s, m, e := a.saved(name)

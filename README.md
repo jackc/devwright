@@ -190,6 +190,10 @@ fi
 exec bash scripts/install-user
 ```
 
+Onboarding SSH commands use fresh connections with multiplexing disabled, so
+login-shell and group changes made by provisioning take effect on subsequent
+connections. They do not leave a shared connection for interactive SSH logins.
+
 The system script can select the user's shell using `$DEVWRIGHT_USER`. The user
 script runs with the selected account's identity and home. The checkout stays
 root-owned, and the VM's sudo policy is unchanged.
