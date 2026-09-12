@@ -63,3 +63,24 @@ syntax checks. Fresh local-directory, Git-repository, and custom-recipe VM
 acceptance runs passed, including distinct VM/project names, an explicit project
 name, retry/restart recovery, and preservation of guest edits. Unit tests also
 cover saved-name validation and the VM-name fallback for older onboarding state.
+
+## SSH client choice
+
+Devwright uses the system OpenSSH client for internal operations, passing Lima's
+generated instance `ssh.config` with `ssh -F` (see
+[`app.ssh`](internal/launch/onboard.go)). This keeps Lima responsible for connection
+settings, including ports that can change after a VM restart, and lets OpenSSH
+interpret its own configuration format.
+
+`golang.org/x/crypto/ssh` is a viable alternative. It would provide structured
+errors and direct connection control, but it does not automatically consume
+OpenSSH configuration. Devwright would need to obtain Lima's connection details
+and manage authentication, host-key handling, cancellation, and cleanup. Avoiding
+subprocesses is unlikely to materially improve provisioning performance; remote
+commands would still require shell quoting.
+
+Keep OpenSSH for this workload. Reconsider an internal client if targeted retries,
+finer connection control, or substantial remote execution volume creates a
+concrete benefit. Setup deliberately authenticates each call afresh because
+provisioning can change login shells and groups; preserve that behavior with
+either client. Interactive SSH aliases can remain independent of this choice.
